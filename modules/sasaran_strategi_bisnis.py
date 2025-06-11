@@ -15,7 +15,7 @@ BTN_GET_AI_LABEL = "🤖 Dapatkan Saran AI"
 BTN_LOAD_LABEL = "📂 Muat Data dari File"
 
 # Inisialisasi API Key OpenAI
-openai.api_key = os.getenv("OPENAI_API_KEY")
+openai.api_key = st.secrets["openai_api_key"]
 
 # Folder tempat file disimpan
 from modules.utils import get_user_file
