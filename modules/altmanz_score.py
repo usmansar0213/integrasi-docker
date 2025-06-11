@@ -6,7 +6,7 @@ import streamlit as st
 
 def main():
     # Konfigurasi API OpenAI dari environment variable
-    openai.api_key = os.getenv("OPENAI_API_KEY")
+   openai.api_key = st.secrets["openai_api_key"]
 
     # 1. Judul Aplikasi
     col1, col2 = st.columns([1, 10])
