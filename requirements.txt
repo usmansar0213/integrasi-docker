@@ -9,7 +9,6 @@ fastapi
 uvicorn
 openpyxl
 openai==0.28
-python-dotenv
 seaborn
 numpy_financial
 tabulate
