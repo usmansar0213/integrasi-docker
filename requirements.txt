@@ -1,0 +1,21 @@
+streamlit
+streamlit-aggrid
+numpy<2
+pandas
+scikit-learn
+matplotlib
+altair
+fastapi
+uvicorn
+openpyxl
+openai==0.28
+python-dotenv
+seaborn
+numpy_financial
+tabulate
+matplotlib
+yfinance
+json5
+xlsxwriter
+graphviz          # ✅ Tambahkan ini
+reportlab         # ✅ Tambahkan ini

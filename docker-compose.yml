@@ -1,0 +1,25 @@
+version: '3.9'
+
+services:
+  streamlit-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: integrasi_streamlit
+    ports:
+      - "8502:8501"
+    volumes:
+      - ./saved:/app/saved
+      - ./integrasi:/app/integrasi
+      - ./data_integrasi:/app/data_integrasi
+      - ./loss_event:/app/loss_event
+      - ./modules:/app/modules
+      - "C:/Users/usman/integrasi docker:/app/data"  # ✅ mount file Doc_Standard_final.xlsx
+    env_file:
+      - .env
+    restart: unless-stopped
+    command: >
+      streamlit run main.py
+      --server.port=8501
+      --server.address=0.0.0.0
+      --server.runOnSave=true
