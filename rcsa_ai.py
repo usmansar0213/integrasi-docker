@@ -25,9 +25,7 @@ from reportlab.lib.pagesizes import letter, landscape
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Image
-from dotenv import load_dotenv
-load_dotenv("C:/Smart/.env")  # Muat .env dari lokasi Anda
-openai.api_key = os.getenv("OPENAI_API_KEY")
+openai.api_key = st.secrets["openai_api_key"]
 
 
 st.markdown("""
