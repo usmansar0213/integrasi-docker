@@ -269,7 +269,7 @@ def main():
 
                         # Request GPT analysis
                         def get_gpt_analysis(data):
-                            openai.api_key = os.getenv("OPENAI_API_KEY")
+                            openai.api_key = st.secrets["openai_api_key"]
 
                             try:
                                 response = openai.ChatCompletion.create(
