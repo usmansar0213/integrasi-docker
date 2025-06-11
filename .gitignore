@@ -1,0 +1,14 @@
+# Jangan commit file rahasia
+.env
+
+# Jangan commit file Python yang terkompilasi
+__pycache__/
+*.pyc
+
+# Jangan commit file editor sementara
+*.log
+*.swp
+
+# Jangan commit file output sementara
+*.xlsx
+*.csv
