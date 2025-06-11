@@ -1,7 +1,5 @@
 import os
 import json
-from dotenv import load_dotenv
-
 import streamlit as st
 from PIL import Image
 import pandas as pd
@@ -97,8 +95,7 @@ def tampilkan_rangkuman_gpt(gpt_response: str):
     )
 
 def main():
-    load_dotenv()
-    openai.api_key = os.getenv('OPENAI_API_KEY')
+    openai.api_key = st.secrets["openai_api_key"]
 
     display_title()
     query = st.text_input("Masukkan pertanyaan atau kata kunci:")
