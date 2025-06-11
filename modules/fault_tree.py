@@ -6,7 +6,6 @@ import os
 from datetime import datetime
 import openai
 import graphviz  # ✅ PENTING: Tambahkan ini
-from dotenv import load_dotenv
 from pathlib import Path
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
@@ -24,8 +23,7 @@ NAMA_TABEL = "fault_tree"
 FOLDER_SIMPAN = None  # Ditunda hingga session tersedia
 
 # ======================== LOAD ENV & API KEY ========================
-load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+openai.api_key = st.secrets["openai_api_key"]
 
 # ======================== INISIALISASI SESSION STATE ========================
 def init_session():
