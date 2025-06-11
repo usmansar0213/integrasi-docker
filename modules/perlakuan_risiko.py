@@ -7,7 +7,6 @@ import re
 import time
 import json5
 from datetime import datetime
-from dotenv import load_dotenv
 from datetime import datetime
 import io
 
@@ -17,8 +16,7 @@ BTN_GET_AI_LABEL = "🤖 Dapatkan Saran AI"
 BTN_LOAD_LABEL = "📂 Muat Data dari File"
 
 # Inisialisasi API Key OpenAI
-openai.api_key = os.getenv("OPENAI_API_KEY")
-load_dotenv()  
+openai.api_key = st.secrets["openai_api_key"]
 
 def upload_semua_file_risiko():
     with st.expander("📥 Upload Semua File Risiko (Strategi, Inherent, Mitigasi)", expanded=True):
