@@ -74,10 +74,7 @@ def sign_up():
     new_password = st.text_input("New Password", type="password")
     
     perusahaan_options = [
-        "PT Pelabuhan Indonesia (Persero)",
-        "PT Pelindo Jasa Maritim",
-        "PT Pelindo Multi Terminal",
-        "PT Pelindo Solusi Logistik"
+        "DEMO",
     ]
 
     selected_perusahaan = st.selectbox("Pilih Nama Perusahaan", perusahaan_options)
