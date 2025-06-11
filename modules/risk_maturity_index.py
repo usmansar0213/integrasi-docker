@@ -11,7 +11,7 @@ from st_aggrid import AgGrid, GridOptionsBuilder, ColumnsAutoSizeMode
 
 def main():
     # Load API Key from environment variable
-    openai.api_key = os.getenv("OPENAI_API_KEY")
+    openai.api_key = st.secrets["openai_api_key"]
 
     # Define default file directory
     uploaded_files_dir = get_user_file("uploaded_files")
