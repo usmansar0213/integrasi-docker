@@ -9,14 +9,14 @@ def show():
         if os.path.exists(via_icon_path):
             st.image(via_icon_path, width=150)
     with col2:
-        st.markdown("## Selamat Datang di Aplikasi VIA")
+        st.markdown("## Selamat Datang di Aplikasi RISMA")
         st.markdown("### Platform Manajemen Risiko Terpadu – Proyek & Korporasi")
 
     st.markdown("---")
 
     # ------------------ Penjelasan Umum ------------------ #
     st.markdown("""
-    Aplikasi **VIA** menggabungkan dua pilar utama dalam manajemen risiko:
+    Aplikasi **RISMA** menggabungkan dua pilar utama dalam manajemen risiko:
 
     - 🎛️ **MR Tools** – Alat bantu berbasis AI untuk eksplorasi dan analisis risiko secara cepat dan fleksibel
     - 🧠 **PRIMA-Ai** – Sistem manajemen risiko enterprise yang sesuai regulasi PER-2/MBU/03/2023
@@ -29,7 +29,7 @@ def show():
     st.markdown("""
     Modul-modul ini berfungsi sebagai **alat bantu berbasis AI dan data science**:
 
-    1. 🤖 **Chat Bot VIA** – Asisten AI untuk analisis risiko dan tanya jawab
+    1. 🤖 **Chat Bot RISMA** – Asisten AI untuk analisis risiko dan tanya jawab
     2. 🎲 **Risk Modeling Monte Carlo** – Simulasi risiko berbasis distribusi probabilistik
     3. 🧠 **RCSA AI** – Identifikasi mandiri risiko dan kontrol secara otomatis
     4. 📊 **Feasibility Study** – Studi kelayakan proyek secara menyeluruh
