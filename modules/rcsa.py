@@ -1,772 +1,383 @@
-
-# ✅ Fungsi Format Angka
-def format_number_with_comma(number):
-    """Mengonversi angka ke format dengan koma sebagai pemisah ribuan."""
-    return "{:,.2f}".format(number)
-
-# ✅ Import library
 import streamlit as st
-import datetime
-import re
-import openai
 import pandas as pd
+import json
+import re
 import os
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+from datetime import datetime
+import openai
+import graphviz  # ✅ PENTING: Tambahkan ini
 from dotenv import load_dotenv
-from st_aggrid.grid_options_builder import GridOptionsBuilder
-from st_aggrid import AgGrid
-from io import BytesIO
-from reportlab.lib.pagesizes import letter, landscape
+from pathlib import Path
+from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
+from reportlab.lib.units import cm
+from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Image
+import uuid  # pastikan sudah ada di atas jika belum
 
-# ✅ Load environment
+
+# ======================== KONFIGURASI ========================
+NAMA_TABEL = "fault_tree"
+FOLDER_SIMPAN = "C:/saved"
+
+# ======================== LOAD ENV & API KEY ========================
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
+# ======================== INISIALISASI SESSION STATE ========================
+def init_session():
+    if f"copy_{NAMA_TABEL}" not in st.session_state:
+        st.session_state[f"copy_{NAMA_TABEL}"] = pd.DataFrame(columns=[
+            "ID", "Nama Event", "Parent ID", "Tipe Hubungan", "Probabilitas"
+        ])
+    if "top_event" not in st.session_state:
+        st.session_state.top_event = ""
+    if "deskripsi_event" not in st.session_state:
+        st.session_state.deskripsi_event = ""
 
-def setup_streamlit_styles():
-    import streamlit as st
-
-    # Styling tombol
-    st.markdown("""
-    <style>
-    div.stButton > button {
-        background-color: #FF4B4B;
-        color: white;
-        font-size: 16px;
-        font-weight: bold;
-        padding: 10px 20px;
-        border-radius: 8px;
-        border: none;
-        transition: 0.3s;
-    }
-    div.stButton > button:hover {
-        background-color: #D62828;
-        color: white;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-    # Styling global
-    st.markdown("""
-    <style>
-    body { font-size: 20px; }
-    h1 { font-size: 36px; }
-    h2 { font-size: 30px; }
-    h3 { font-size: 24px; }
-    p { font-size: 20px; }
-    .stDataFrame table, .stTable, .stText { width: 100% !important; }
-    </style>
-    """, unsafe_allow_html=True)
-
-def format_number_with_comma(number):
-    """Mengonversi angka ke format dengan koma sebagai pemisah ribuan."""
-    return "{:,.2f}".format(number)
-
-def setup_environment():
-    import os
-    from dotenv import load_dotenv
-    import openai
-
-    load_dotenv()
-    openai.api_key = os.getenv("OPENAI_API_KEY")
-
-
-def chat_with_openai(prompt):
+# ======================== PARSING JSON GPT ========================
+def extract_json_from_response(response_text):
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You are a helpful AI assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7,
-            max_tokens=500
-        )
-        return response["choices"][0]["message"]["content"].strip()
-    except openai.error.OpenAIError as e:
-        print(f"Terjadi kesalahan pada OpenAI API: {e}")
-        return "Error: Tidak dapat memproses permintaan."
+        pattern = re.compile(r'\[.*\]', re.DOTALL)
+        match = pattern.search(response_text)
+        if match:
+            return json.loads(match.group())
+        else:
+            return None
+    except json.JSONDecodeError:
+        return None
+
+# ======================== GPT REQUEST ========================
+def get_gpt_fault_tree(top_event, deskripsi):
+    prompt = f"""
+Buatkan Fault Tree Analysis dalam format JSON array untuk top event berikut:
+Top Event: {top_event}
+Deskripsi: {deskripsi}
+
+Output JSON harus berisi list dict dengan struktur:
+"ID", "Nama Event", "Parent ID", "Tipe Hubungan (AND/OR)", dan opsional "Probabilitas" (0-1)
+"""
+    response = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=[
+            {"role": "system", "content": "Kamu adalah analis risiko yang ahli dalam Fault Tree Analysis."},
+            {"role": "user", "content": prompt}
+        ]
+    )
+    return extract_json_from_response(response.choices[0].message.content)
+
+# ======================== INPUT TOP EVENT ========================
+def input_top_event():
+    st.subheader("📌 Masukkan Top Event")
+    st.session_state.top_event = st.text_input("Top Event", value=st.session_state.top_event)
+    st.session_state.deskripsi_event = st.text_area("Deskripsi Top Event", value=st.session_state.deskripsi_event)
+    if st.button("🤖 Buat Struktur FTA dengan GPT"):
+        if not st.session_state.top_event:
+            st.warning("Masukkan Top Event terlebih dahulu!")
+            return
+        with st.spinner("Meminta bantuan GPT untuk menyusun struktur..."):
+            hasil = get_gpt_fault_tree(st.session_state.top_event, st.session_state.deskripsi_event)
+            if hasil:
+                st.session_state[f"copy_{NAMA_TABEL}"] = pd.DataFrame(hasil)
+                st.success("✅ Struktur berhasil dibuat!")
+            else:
+                st.error("❌ Gagal memproses respon dari GPT.")
+
+# ======================== TAMPILKAN EDITOR ========================
+def tampilkan_editor():
+    st.subheader("📋 Struktur Fault Tree Analysis")
+    st.markdown("Tabel di bawah ini menunjukkan struktur event dan hubungan logika antar penyebab.")
+
+    with st.expander("📖 Petunjuk Pengisian Tabel"):
+        st.markdown("""
+        Silakan isi atau sesuaikan data pada tabel berikut sesuai struktur Fault Tree Analysis (FTA) Anda.
+
+        **🔹 Penjelasan Kolom:**
+        - **ID**: Nomor unik untuk setiap event. Disarankan angka urut (contoh: 1, 2, 3...).
+        - **Nama Event**: Deskripsi singkat dari event atau penyebab (contoh: *Kerusakan Peralatan*).
+        - **Parent ID**: Diisi dengan `ID` dari event induk. Kosongkan jika ini adalah *Top Event*.
+        - **Tipe Hubungan**:
+            - `AND`: Semua anak harus terjadi agar induk terjadi.
+            - `OR`: Salah satu anak cukup untuk menyebabkan induk.
+        - **Probabilitas**: Nilai antara `0` dan `1` (contoh: `0.2` untuk 20%) yang menunjukkan kemungkinan event terjadi.
+
+        ⚠️ **Catatan Penting:**
+        - Pastikan tidak ada **ID ganda**.
+        - **Parent ID** harus merujuk pada ID yang valid di tabel.
+        - Probabilitas bisa dikosongkan jika belum diketahui, tapi akan dibutuhkan saat perhitungan.
+        """)
+
+    df = st.session_state[f"copy_{NAMA_TABEL}"]
+    
+    # Editor hanya satu kali, key harus tetap!
+    edited_df = st.data_editor(df, key="editor_fta", num_rows="dynamic")
+
+    if st.button("💾 Update Struktur Event"):
+        st.session_state[f"copy_{NAMA_TABEL}"] = edited_df
+        st.success("✅ Struktur event berhasil diperbarui.")
+def tampilkan_visualisasi():
+    st.subheader("📈 Visualisasi Pohon Kesalahan")
+    st.markdown("Diagram di bawah menunjukkan hubungan antar event berdasarkan logika AND/OR.")
+    df = st.session_state[f"copy_{NAMA_TABEL}"]
+
+    dot = graphviz.Digraph()
+    dot.attr(rankdir="TB")
+
+    for _, row in df.iterrows():
+        label = f"{row['ID']}: {row['Nama Event']}\nP={row['Probabilitas']}"
+        dot.node(str(row['ID']), label)
+
+    for _, row in df.iterrows():
+        parent_id = row['Parent ID']
+        if pd.notna(parent_id) and str(parent_id).strip() != '':
+            try:
+                dot.edge(str(int(float(parent_id))), str(row['ID']), label=row['Tipe Hubungan'])
+            except ValueError:
+                st.warning(f"⚠️ ID Parent tidak valid: '{parent_id}' pada event '{row['Nama Event']}'")
+
+    st.graphviz_chart(dot)
+    return dot  # 🆕 Tambahkan ini
+
+def simpan_visualisasi(dot):
+    nama_top_event = st.session_state.get("top_event", "top_event_kosong").strip().replace(" ", "_")
+    tanggal = datetime.now().strftime("%d%m%y")
+    nama_file = f"{FOLDER_SIMPAN}/fault_tree_{nama_top_event}_time_{tanggal}"
+
+    try:
+        dot.render(filename=nama_file, format="png", cleanup=True)
+        st.success(f"🖼️ Visualisasi disimpan sebagai: {nama_file}.png")
+    except Exception as e:
+        st.error(f"❌ Gagal menyimpan visualisasi: {e}")
 
         
-def get_project_inputs():
-    import streamlit as st
-    import datetime
+def generate_dot_only():
+    df = st.session_state[f"copy_{NAMA_TABEL}"]
+    dot = graphviz.Digraph()
+    dot.attr(rankdir="TB")
 
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        st.image("static/via_icon.jpg", width=200)
+    for _, row in df.iterrows():
+        label = f"{row['ID']}: {row['Nama Event']}\nP={row['Probabilitas']}"
+        dot.node(str(row['ID']), label)
 
-    with col2:
-        st.markdown("""
-        <div style='display: flex; flex-direction: column; justify-content: flex-start; align-items: flex-start; margin-top: -30px;'>
-            <h1 style='font-size:30px; font-weight: bold; color: #333;'>RCSA Berbasis AI</h1>
-            <p style='font-size: 18px; color: #666;'>Aplikasi Risk and Control Self-Assessment (RCSA) berbasis AI adalah sistem yang dirancang untuk mengidentifikasi, menilai, dan mengelola risiko serta efektivitas kontrol secara otomatis dan berbasis data.</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-    project_description = st.text_area('Deskripsikan proyek Anda', 
-        'Perawatan dan Manajemen Risiko Pesawat Kargo Internasional.\n'
-        'Perjanjian penyediaan jasa perawatan pesawat antara PT. AviaTech dan Maskapai Kargo Internasional.\n'
-        'PT. AviaTech bertanggung jawab untuk melakukan perawatan berkala, inspeksi keselamatan, dan perbaikan teknis pesawat.\n'
-        'Proyek ini mencakup perawatan berkala setiap 6 bulan, pengecekan sistem navigasi setiap 3 bulan, dan manajemen risiko operasional.')
-
-    project_goal = st.text_area('Apa tujuan dari proyek Anda?', 
-        '1. Memastikan pesawat beroperasi dengan aman dan efisien.\n'
-        '2. Mengurangi downtime pesawat akibat perawatan dengan perencanaan berbasis AI.\n'
-        '3. Meminimalkan risiko kegagalan mesin dan sistem avionik.\n'
-        '4. Meningkatkan kepatuhan terhadap regulasi keselamatan penerbangan internasional.')
-
-    stakeholders = st.text_area('Siapa saja stakeholder yang terlibat?', 
-        '- PT. AviaTech (Penyedia Jasa - MRO)\n'
-        '- Maskapai Kargo Internasional (Pengguna Jasa)\n'
-        '- Regulator Penerbangan (FAA, EASA, Kemenhub)\n'
-        '- Perusahaan Asuransi Penerbangan\n'
-        '- Penyedia Suku Cadang (Airbus, Boeing)')
-
-    start_date = st.date_input('Tanggal Mulai', value=datetime.date(2025, 4, 1))
-    end_date = st.date_input('Tanggal Selesai', min_value=start_date, value=start_date + datetime.timedelta(days=270))
-
-    input_budget = st.text_input('Berapa anggaran untuk proyek ini?', '75,000,000,000.00')
-    input_limit_risiko = st.text_input('Berapa Limit Risiko untuk proyek ini?', '5,000,000,000.00')
-
-    return project_description, project_goal, stakeholders, start_date, end_date, input_budget, input_limit_risiko
-def process_and_validate_budget(input_budget, input_limit_risiko):
-    import streamlit as st
-
-    clean_budget = 0
-    clean_limit_risiko = 0
-    formatted_budget = ""
-    formatted_limit_risiko = ""
-
-    if input_budget:
-        try:
-            clean_budget = float(input_budget.replace(",", ""))
-            formatted_budget = format_number_with_comma(clean_budget)
-            st.session_state.budget = clean_budget
-        except ValueError:
-            st.error("Format anggaran salah. Masukkan angka valid dengan koma sebagai pemisah ribuan.")
-
-    if input_limit_risiko:
-        try:
-            clean_limit_risiko = float(input_limit_risiko.replace(",", ""))
-            formatted_limit_risiko = format_number_with_comma(clean_limit_risiko)
-            st.session_state.limit_risk = clean_limit_risiko
-        except ValueError:
-            st.error("Format limit risiko salah. Masukkan angka valid dengan koma sebagai pemisah ribuan.")
-
-    return clean_budget, clean_limit_risiko, formatted_budget, formatted_limit_risiko
-
-def save_project_data(project_description, project_goal, stakeholders, start_date, end_date, clean_budget, clean_limit_risiko):
-    import streamlit as st
-
-    st.session_state.project_description = project_description
-    st.session_state.project_goal = project_goal
-    st.session_state.stakeholders = stakeholders
-    st.session_state.start_date = start_date
-    st.session_state.end_date = end_date
-    st.session_state.budget = clean_budget
-    st.session_state.limit_risk = clean_limit_risiko
-
-    st.success("Data berhasil disimpan!")
-def display_project_recap():
-    import streamlit as st
-
-    if "project_description" in st.session_state:
-        st.subheader("📋 Rekap Proyek")
-        st.write(f"**📌 Deskripsi Proyek:**\n{st.session_state.project_description}")
-        st.write(f"**🎯 Tujuan Proyek:**\n{st.session_state.project_goal}")
-        st.write(f"**👥 Stakeholders:**\n{st.session_state.stakeholders}")
-        st.write(f"**📅 Tanggal Mulai:** {st.session_state.start_date}")
-        st.write(f"**📅 Tanggal Selesai:** {st.session_state.end_date}")
-        st.write(f"**💰 Anggaran:** Rp {format_number_with_comma(st.session_state.budget)}")
-        st.write(f"**⚠️ Limit Risiko:** Rp {format_number_with_comma(st.session_state.limit_risk)}")
-
-def get_risk_suggestions(project_description, project_goal, stakeholders, start_date, end_date, project_budget, limit_risk):
-    import openai
-
-    prompt = f"""
-    Berikut deskripsi proyek, tujuan, stakeholder, tanggal mulai, tanggal selesai, anggaran, dan limit risiko:
-    Deskripsi: {project_description}
-    Tujuan: {project_goal}
-    Stakeholders: {stakeholders}
-    Tanggal Mulai: {start_date}
-    Tanggal Selesai: {end_date}
-    Anggaran: {project_budget}
-    Limit Risiko: {limit_risk}
-
-    Silakan berikan saran risiko yang mungkin terjadi dalam proyek ini terkait dengan kategori berikut:
-    1. Kontraktual
-    2. Keuangan & Pembayaran
-    3. Komersial
-    4. Operasi
-    5. Teknik
-    6. Hukum
-    7. Reputasi
-    8. Lingkungan
-    """
-
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant for project risk assessment."},
-            {"role": "user", "content": prompt}
-        ],
-        max_tokens=500
-    )
-    return response.choices[0].message['content']
-
-def display_risk_suggestions():
-    import streamlit as st
-
-    if "gpt_response" in st.session_state:
-        # Mengonversi respons GPT menjadi list risiko
-        risk_list = st.session_state.gpt_response.split('\n')
-        relevant_risks = [risk.strip() for risk in risk_list if risk.strip()]
-
-        # Pindahkan pemilihan risiko ke sidebar
-        with st.sidebar:
-            selected_risks = []
-            for risk in relevant_risks:
-                if risk.endswith(':'):
-                    st.markdown(f"**{risk}**")
-                else:
-                    checkbox = st.checkbox(risk)
-                    if checkbox:
-                        selected_risks.append(risk)
-
-            # Simpan ke session_state
-            st.session_state.selected_risks = selected_risks
-
-def identify_and_calculate_risks():
-    import streamlit as st
-    import pandas as pd
-    import numpy as np
-
-    if "selected_risks" in st.session_state:
-        st.subheader("3. Identifikasi Risiko")
-        inherent_risks = {}
-        risk_data = []
-        risk_number = 1
-        total_inherent_risk_exposure = 0
-        limit_risk = st.session_state.limit_risk
-
-        for risk in st.session_state.selected_risks:
-            with st.expander(risk):
-                impact = st.text_input(f"Masukkan Nilai Dampak untuk {risk}", '1,000,000,000', key=risk+"_impact")
-                if impact:
-                    clean_impact = float(impact.replace(",", ""))
-                    formatted_impact = format_number_with_comma(clean_impact)
-
-                    if clean_impact > 0.80 * limit_risk:
-                        impact_scale = 5
-                    elif 0.60 * limit_risk < clean_impact <= 0.80 * limit_risk:
-                        impact_scale = 4
-                    elif 0.40 * limit_risk < clean_impact <= 0.60 * limit_risk:
-                        impact_scale = 3
-                    elif 0.20 * limit_risk < clean_impact <= 0.40 * limit_risk:
-                        impact_scale = 2
-                    else:
-                        impact_scale = 1
-
-                    likelihood_options = {
-                        1: "1 - Sangat rendah (< 20%)",
-                        2: "2 - Rendah (20% - 40%)",
-                        3: "3 - Sedang (40% - 60%)",
-                        4: "4 - Tinggi (60% - 80%)",
-                        5: "5 - Sangat tinggi (> 80%)"
-                    }
-                    likelihood_labels = list(likelihood_options.values())
-                    likelihood_values = list(likelihood_options.keys())
-                    likelihood = st.selectbox(f"Masukkan Skala Kemungkinan untuk {risk}", likelihood_labels, index=2)
-                    likelihood_value = likelihood_values[likelihood_labels.index(likelihood)]
-                    likelihood_percentage = likelihood_value * 0.20
-
-                    inherent_risk_exposure_value = clean_impact * likelihood_percentage
-                    inherent_risks[risk] = {
-                        "impact": formatted_impact,
-                        "impact_scale": impact_scale,
-                        "likelihood_percentage": likelihood_percentage * 100,
-                        "inherent_risk_exposure": inherent_risk_exposure_value,
-                    }
-
-                    risk_data.append({
-                        "No": risk_number,
-                        "Risiko": risk,
-                        "Dampak": formatted_impact,
-                        "Skala Dampak": impact_scale,
-                        "Skala Kemungkinan": likelihood_value,
-                        "Kemungkinan (%)": likelihood_percentage * 100,
-                        "Inherent Risk Exposure": format_number_with_comma(inherent_risk_exposure_value),
-                    })
-
-                    total_inherent_risk_exposure += inherent_risk_exposure_value
-                    st.session_state["total_inherent_risk_exposure"] = total_inherent_risk_exposure
-                    risk_number += 1
-
-        if risk_data:
-            st.subheader("4. Tabel Inherent Risk Exposure")
-            risk_df = pd.DataFrame(risk_data)
-            total_row = pd.DataFrame([{
-                "No": "",
-                "Risiko": "Total Inherent Risk Exposure",
-                "Dampak": "",
-                "Skala Dampak": "",
-                "Skala Kemungkinan": "",
-                "Kemungkinan (%)": "",
-                "Inherent Risk Exposure": format_number_with_comma(total_inherent_risk_exposure),
-            }])
-            risk_df = pd.concat([risk_df, total_row], ignore_index=True)
-            st.session_state["Tabel Inherent"] = risk_df.to_dict(orient="records")
-            st.table(risk_data)
-            st.write(f"Total Inherent Risk Exposure: {format_number_with_comma(total_inherent_risk_exposure)}")
-def display_risk_matrix():
-    import streamlit as st
-    import pandas as pd
-    import numpy as np
-    import matplotlib.pyplot as plt
-
-    if "Tabel Inherent" in st.session_state:
-        st.subheader("5. Matriks Risiko Inherent")
-        risk_df = pd.DataFrame(st.session_state["Tabel Inherent"]).dropna(subset=["Skala Dampak", "Skala Kemungkinan"])
-
-        risk_labels = {
-            (1, 1): ('Low', 1), (1, 2): ('Low', 5), (1, 3): ('Low to Moderate', 10), (1, 4): ('Moderate', 15), (1, 5): ('High', 20),
-            (2, 1): ('Low', 2), (2, 2): ('Low to Moderate', 6), (2, 3): ('Low to Moderate', 11), (2, 4): ('Moderate to High', 16), (2, 5): ('High', 21),
-            (3, 1): ('Low', 3), (3, 2): ('Low to Moderate', 8), (3, 3): ('Moderate', 13), (3, 4): ('Moderate to High', 18), (3, 5): ('High', 23),
-            (4, 1): ('Low', 4), (4, 2): ('Low to Moderate', 9), (4, 3): ('Moderate', 14), (4, 4): ('Moderate to High', 19), (4, 5): ('High', 24),
-            (5, 1): ('Low to Moderate', 7), (5, 2): ('Moderate', 12), (5, 3): ('Moderate to High', 17), (5, 4): ('High', 22), (5, 5): ('High', 25)
-        }
-
-        color_matrix = np.full((5, 5), 'white', dtype=object)
-        risk_matrix = [['' for _ in range(5)] for _ in range(5)]
-
-        for coord, (label, _) in risk_labels.items():
-            if label == 'High':
-                color_matrix[coord[0] - 1][coord[1] - 1] = 'red'
-            elif label == 'Moderate to High':
-                color_matrix[coord[0] - 1][coord[1] - 1] = 'orange'
-            elif label == 'Moderate':
-                color_matrix[coord[0] - 1][coord[1] - 1] = 'yellow'
-            elif label == 'Low to Moderate':
-                color_matrix[coord[0] - 1][coord[1] - 1] = 'lightgreen'
-            elif label == 'Low':
-                color_matrix[coord[0] - 1][coord[1] - 1] = 'darkgreen'
-
-        for index, row in risk_df.iterrows():
+    for _, row in df.iterrows():
+        parent_id = row['Parent ID']
+        if pd.notna(parent_id) and str(parent_id).strip() != '':
             try:
-                skala_dampak = int(row['Skala Dampak'])
-                skala_kemungkinan = int(row['Skala Kemungkinan'])
-                nomor_risiko = f"#{row['No']}"
-                if 1 <= skala_kemungkinan <= 5 and 1 <= skala_dampak <= 5:
-                    if risk_matrix[skala_kemungkinan - 1][skala_dampak - 1]:
-                        risk_matrix[skala_kemungkinan - 1][skala_dampak - 1] += f", {nomor_risiko}"
-                    else:
-                        risk_matrix[skala_kemungkinan - 1][skala_dampak - 1] = nomor_risiko
+                dot.edge(str(int(float(parent_id))), str(row['ID']), label=row['Tipe Hubungan'])
             except ValueError:
-                continue
+                pass  # Hindari error saat simpan
+    return dot
 
-        fig, ax = plt.subplots(figsize=(5, 3), dpi=150)
-        for i in range(5):
-            for j in range(5):
-                ax.add_patch(plt.Rectangle((j, i), 1, 1, color=color_matrix[i, j], edgecolor='black', linewidth=0.5))
-                label, number = risk_labels.get((i + 1, j + 1), ('', ''))
-                ax.text(j + 0.5, i + 0.7, label, ha='center', va='center', fontsize=5, color='black')
-                ax.text(j + 0.5, i + 0.5, str(number), ha='center', va='center', fontsize=5, color='black')
-                ax.text(j + 0.5, i + 0.3, risk_matrix[i][j], ha='center', va='center', fontsize=5, color='blue')
+# ======================== HITUNG PROBABILITAS ========================
+def hitung_probabilitas():
+    st.subheader("📐 Perhitungan Probabilitas Top Event")
+    st.markdown("Probabilitas dihitung berdasarkan logika kombinasi AND dan OR dari anak node.")
+    df = st.session_state[f"copy_{NAMA_TABEL}"].copy()
 
-        ax.set_xlim(0, 5)
-        ax.set_ylim(0, 5)
-        ax.set_xticks(np.arange(5) + 0.5)
-        ax.set_yticks(np.arange(5) + 0.5)
-        ax.set_xticklabels([1, 2, 3, 4, 5], fontsize=5)
-        ax.set_yticklabels([1, 2, 3, 4, 5], fontsize=5)
-        ax.set_xlabel("Skala Dampak", fontsize=10)
-        ax.set_ylabel("Skala Kemungkinan", fontsize=10)
-        ax.set_xticks(np.arange(0, 6, 1), minor=True)
-        ax.set_yticks(np.arange(0, 6, 1), minor=True)
-        ax.grid(which='minor', color='black', linestyle='-', linewidth=0.5)
-        plt.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.1)
+    # 🔧 Perbaikan penting
+    df["Parent ID"] = df["Parent ID"].replace("", pd.NA)
 
-        st.pyplot(fig)
-def edit_and_confirm_mitigations():
-    import streamlit as st
-    import pandas as pd
-    import re
+    df.set_index("ID", inplace=True)
 
-    if "selected_risks" in st.session_state:
-        st.subheader("6. Edit & Konfirmasi Saran Mitigasi per Risiko")
-
-        # Inisialisasi storage per risiko
-        if "confirmed_mitigations_per_risk" not in st.session_state:
-            st.session_state.confirmed_mitigations_per_risk = {}
-
-        for risk in st.session_state.selected_risks:
-            with st.expander(f"Risiko: {risk}"):
-                if risk not in st.session_state:
-                    if st.button(f"Peroleh Saran Mitigasi untuk {risk}"):
-                        risk_handling_suggestions = get_risk_handling_suggestions(risk)
-                        st.session_state[risk] = risk_handling_suggestions
-
-                if risk in st.session_state:
-                    risk_suggestion = st.session_state[risk]
-
-                    # Parsing hasil GPT
-                    mitigasi_list = re.findall(r"Mitigasi:\s*(.+)", risk_suggestion)
-                    kpi_list = re.findall(r"KPI:\s*([^:]+)", risk_suggestion)
-                    target_kpi_list = re.findall(r"Target KPI:\s*(\d+)", risk_suggestion)
-                    pic_list = re.findall(r"PIC:\s*(.+)", risk_suggestion)
-                    biaya_list = re.findall(r"Biaya:\s*(\d+)", risk_suggestion)
-                    waktu_list = re.findall(r"Waktu Pelaksanaan:\s*(\d+)", risk_suggestion)
-
-                    # Fallback jika mitigasi_list kosong
-                    if not mitigasi_list and kpi_list:
-                        mitigasi_list = [f"Mitigasi untuk: {risk}"] * len(kpi_list)
-
-                    max_length = max(map(len, [mitigasi_list, kpi_list, target_kpi_list, pic_list, biaya_list, waktu_list]))
-                    mitigasi_list += [""] * (max_length - len(mitigasi_list))
-                    kpi_list += [""] * (max_length - len(kpi_list))
-                    target_kpi_list += ["0"] * (max_length - len(target_kpi_list))
-                    pic_list += ["Belum Ditentukan"] * (max_length - len(pic_list))
-                    biaya_list += ["0"] * (max_length - len(biaya_list))
-                    waktu_list += ["0"] * (max_length - len(waktu_list))
-
-                    # Konversi angka
-                    target_kpi_list = [int(x) for x in target_kpi_list]
-                    biaya_list = [int(x) for x in biaya_list]
-                    waktu_list = [int(x) for x in waktu_list]
-
-                    # Buat DataFrame
-                    mitigasi_df = pd.DataFrame({
-                        "Program Mitigasi": mitigasi_list,
-                        "KPI": kpi_list,
-                        "Target KPI": target_kpi_list,
-                        "PIC": pic_list,
-                        "Biaya": biaya_list,
-                        "Waktu Pelaksanaan": waktu_list
-                    })
-
-                    # Editor interaktif
-                    edited_df = st.data_editor(mitigasi_df, use_container_width=True, hide_index=True, key=f"edited_{risk}")
-
-                    if st.button(f"Konfirmasi Mitigasi untuk {risk}"):
-                        st.session_state.confirmed_mitigations_per_risk[risk] = edited_df
-                        st.success(f"Saran mitigasi untuk '{risk}' berhasil dikonfirmasi!")
-
-        # Gabungkan semua mitigasi yang sudah dikonfirmasi
-        all_mitigations = []
-        for df in st.session_state.confirmed_mitigations_per_risk.values():
-            all_mitigations.append(df)
-
-        if all_mitigations:
-            st.session_state.all_mitigations = pd.concat(all_mitigations, ignore_index=True)
-            st.subheader("✅ Tabel Semua Mitigasi (Final)")
-            st.data_editor(st.session_state.all_mitigations, use_container_width=True, hide_index=True, key="final_mitigations")
+    def kalkulasi_cabang(parent_id):
+        anak = df[df["Parent ID"] == parent_id]
+        if anak.empty:
+            return float(df.at[parent_id, "Probabilitas"])
+        tipe = anak["Tipe Hubungan"].iloc[0]
+        prob_list = [kalkulasi_cabang(i) for i in anak.index]
+        if tipe == "AND":
+            return round(pd.Series(prob_list).prod(), 5)
         else:
-            st.info("Belum ada mitigasi yang dikonfirmasi.")
+            return round(1 - pd.Series([(1 - p) for p in prob_list]).prod(), 5)
+
+    try:
+        top_event_candidates = df[pd.isna(df["Parent ID"])].index
+        if top_event_candidates.empty:
+            st.warning("⚠️ Tidak ditemukan top event dengan Parent ID kosong.")
+            return
+        top_event_id = top_event_candidates[0]
+        hasil = kalkulasi_cabang(top_event_id)
+        st.success(f"✅ Probabilitas total terjadinya '{df.at[top_event_id, 'Nama Event']}' adalah {hasil}")
+    except Exception as e:
+        st.error(f"❌ Gagal menghitung probabilitas: {e}")
 
 
+# ======================== IDENTIFIKASI RISIKO TINGGI ========================
+# ======================== IDENTIFIKASI RISIKO TINGGI ========================
+def identifikasi_kontributor(threshold=0.4):
+    st.subheader("🎯 Kontributor Risiko Tertinggi")
+    df = st.session_state[f"copy_{NAMA_TABEL}"].copy()
+    df["Probabilitas"] = pd.to_numeric(df["Probabilitas"], errors="coerce").fillna(0.0)
+    risiko_tinggi = df[df["Probabilitas"] > threshold]
+    st.markdown(f"Menampilkan event dengan probabilitas > {threshold}:")
+    st.dataframe(risiko_tinggi)
 
-def edit_and_confirm_risks():
-    import streamlit as st
-    import pandas as pd
 
-    if "gpt_response" in st.session_state:
-        st.subheader("2. Edit & Konfirmasi Saran Risiko per Kategori")
+# ======================== RENCANA MITIGASI ========================
+def rencana_mitigasi():
+    st.subheader("🛡️ Rencana Mitigasi untuk Event Berisiko Tinggi")
+    df = st.session_state[f"copy_{NAMA_TABEL}"].copy()
+    df["Probabilitas"] = pd.to_numeric(df["Probabilitas"], errors="coerce").fillna(0.0)
 
-        # Pisahkan baris
-        lines = [line.strip() for line in st.session_state.gpt_response.split('\n') if line.strip()]
-        current_category = None
-        category_risks = {}
+    risiko_tinggi = df[df["Probabilitas"] > 0.4][["ID", "Nama Event", "Probabilitas"]]
+    risiko_tinggi = risiko_tinggi.rename(columns={"Nama Event": "Event"})
+    risiko_tinggi["Rencana Mitigasi"] = ""
 
-        for line in lines:
-            if line.endswith(':'):
-                current_category = line.rstrip(':')
-                category_risks[current_category] = []
-            else:
-                if current_category:
-                    category_risks[current_category].append(line)
+    st.session_state.mitigasi_df = risiko_tinggi.reset_index(drop=True)
 
-        # Inisialisasi storage per kategori
-        if "confirmed_risks_per_category" not in st.session_state:
-            st.session_state.confirmed_risks_per_category = {}
-
-        for category, risks in category_risks.items():
-            with st.expander(f"Kategori: {category}"):
-                df_risks = pd.DataFrame({"Risiko": risks})
-                edited_df = st.data_editor(df_risks, use_container_width=True, hide_index=True, key=f"edited_{category}")
-
-                if st.button(f"Konfirmasi Risiko untuk {category}"):
-                    confirmed_risks = edited_df["Risiko"].fillna("").tolist()
-                    confirmed_risks = [risk for risk in confirmed_risks if risk.strip()]
-                    # Simpan di session_state
-                    st.session_state.confirmed_risks_per_category[category] = confirmed_risks
-                    st.success(f"{len(confirmed_risks)} risiko pada kategori '{category}' berhasil dikonfirmasi!")
-
-        # Gabungkan semua risiko yang sudah dikonfirmasi
-        all_confirmed_risks = []
-        for risks in st.session_state.confirmed_risks_per_category.values():
-            all_confirmed_risks.extend(risks)
-
-        # Simpan final di session_state
-        st.session_state.selected_risks = all_confirmed_risks
-
-        if all_confirmed_risks:
-            st.subheader("✅ Semua Risiko Terpilih (Final)")
-            final_df = pd.DataFrame({"Risiko yang Dipilih": all_confirmed_risks})
-            st.data_editor(final_df, use_container_width=True, hide_index=True, key="final_confirmed_risks")
-        else:
-            st.info("Belum ada risiko yang dikonfirmasi. Silakan gunakan tombol di setiap kategori.")
-def get_risk_handling_suggestions(risk):
-    import openai
-
-    prompt = f"""
-    Berikut adalah risiko yang terpilih: {risk}.
-    Berikan 3 program mitigasi yang dapat diterapkan untuk mengurangi risiko ini, berikan hanya nama programnya saja (1 kalimat ringkas, misalnya 'Audit kontrak internal', 'Pelatihan kepatuhan'), dan rekomendasi untuk:
-    - KPI (Indikator Kinerja)
-    - Target KPI (Angka yang harus dicapai)
-    - PIC (Penanggung Jawab)
-    - Biaya (Estimasi biaya mitigasi dalam angka)
-    - Waktu Pelaksanaan (Perkiraan waktu dalam bulan)
-
-    Format jawaban:
-    - Setiap nama program mitigasi harus dimulai dengan kata 'Program Mitigasi:'
-    - Setiap KPI harus dimulai dengan kata 'KPI:'
-    - Setiap Target KPI harus dimulai dengan kata 'Target KPI:' dan hanya berisi angka
-    - Setiap PIC harus dimulai dengan kata 'PIC:'
-    - Setiap Biaya harus dimulai dengan kata 'Biaya:' dan hanya berisi angka
-    - Setiap Waktu Pelaksanaan harus dimulai dengan kata 'Waktu Pelaksanaan:' dan hanya berisi angka dalam bulan
-
-    Contoh:
-    Program Mitigasi: Pelatihan Kepatuhan Kontrak
-    KPI: Tingkat kepatuhan kontrak - Target KPI
-    Target KPI: 95
-    PIC: Manajer Kontrak
-    Biaya: 10000000
-    Waktu Pelaksanaan: 6
-    """
-    
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant for risk management."},
-            {"role": "user", "content": prompt}
-        ],
-        max_tokens=500
+    st.data_editor(
+        st.session_state.mitigasi_df,
+        key="editor_mitigasi",
+        num_rows="dynamic",
+        use_container_width=True,  # ✅ Melebar secara keseluruhan
+        column_config={
+            "ID": st.column_config.TextColumn("ID", width="small"),
+            "Event": st.column_config.TextColumn("Event", width="medium"),
+            "Probabilitas": st.column_config.NumberColumn("Probabilitas", format="%.2f", width="small"),
+            "Rencana Mitigasi": st.column_config.TextColumn(
+                "Rencana Mitigasi",
+                width="stretch"  # ← hint ke Streamlit (tidak error)
+            )
+        }
     )
 
-    return response.choices[0].message['content']
+# ======================== SIMULASI MITIGASI ========================
+def simulasi_mitigasi():
+    st.markdown("---")
+    st.markdown("### 🔁 Simulasi Probabilitas Setelah Mitigasi")
+    st.markdown("Silakan edit probabilitas setiap event setelah mitigasi pada tabel berikut.")
 
+    df = st.session_state[f"copy_{NAMA_TABEL}"].copy()
+    df = df[["ID", "Nama Event", "Parent ID", "Probabilitas"]].rename(columns={"Nama Event": "Event"})
+    df["Probabilitas"] = pd.to_numeric(df["Probabilitas"], errors="coerce").fillna(0.0)
+    df["Parent ID"] = df["Parent ID"].replace(["", "nan"], pd.NA)
+    df = df.reset_index(drop=True)
+    st.session_state.simulasi_df = df
 
-    
-    
-def display_and_update_mitigations():
-    import streamlit as st
-    import pandas as pd
-    import re
+    edited_df = st.data_editor(df, key="editor_simulasi_" + str(datetime.now().timestamp()), num_rows="dynamic", height=400)
 
-    if "all_mitigations" not in st.session_state:
-        st.session_state["all_mitigations"] = pd.DataFrame(columns=["Program Mitigasi", "KPI", "Target KPI", "PIC", "Biaya", "Waktu Pelaksanaan"])
+    try:
+        df_simulasi = edited_df.copy()
+        df_full = st.session_state[f"copy_{NAMA_TABEL}"].copy()
+        df_full.set_index("ID", inplace=True)
+        for _, row in df_simulasi.iterrows():
+            df_full.at[row["ID"], "Probabilitas"] = row["Probabilitas"]
 
-    if "selected_risks" in st.session_state:
-        st.subheader("6. Detail Penanganan Risiko")
-
-        with st.sidebar:
-            for risk in st.session_state.selected_risks:
-                if risk not in st.session_state:
-                    if st.button(f"Peroleh Penanganan Risiko untuk {risk}"):
-                        risk_handling_suggestions = get_risk_handling_suggestions(risk)
-                        st.session_state[risk] = risk_handling_suggestions
-
-        if "mitigations_list" not in st.session_state:
-            st.session_state["mitigations_list"] = []
-
-        mitigations_list = []
-
-        for idx, risk in enumerate(st.session_state.get("selected_risks", []), start=1):
-            if risk in st.session_state:
-                risk_suggestion = st.session_state[risk]
-
-                with st.expander(f"Detail Risiko #{idx}: {risk}"):
-                    st.markdown(f"**Detail Risiko #{idx}: {risk}**")
-
-                    mitigasi_list = re.findall(r"Program Mitigasi:\s*(.+)", risk_suggestion)
-
-                    # Fallback jika kosong
-                    if not mitigasi_list and kpi_list:
-                        mitigasi_list = [f"Program Mitigasi untuk: {risk}"] * len(kpi_list)
-                    kpi_list = re.findall(r"KPI:\s*([^:]+)", risk_suggestion)
-                    target_kpi_list = re.findall(r"Target KPI:\s*(\d+)", risk_suggestion)
-                    pic_list = re.findall(r"PIC:\s*(.+)", risk_suggestion)
-                    biaya_list = re.findall(r"Biaya:\s*(\d+)", risk_suggestion)
-                    waktu_list = re.findall(r"Waktu Pelaksanaan:\s*(\d+)", risk_suggestion)
-
-                    max_length = max(map(len, [mitigasi_list, kpi_list, target_kpi_list, pic_list, biaya_list, waktu_list]))
-                    mitigasi_list += [""] * (max_length - len(mitigasi_list))
-                    kpi_list += [""] * (max_length - len(kpi_list))
-                    target_kpi_list += ["0"] * (max_length - len(target_kpi_list))
-                    pic_list += ["Belum Ditentukan"] * (max_length - len(pic_list))
-                    biaya_list += ["0"] * (max_length - len(biaya_list))
-                    waktu_list += ["0"] * (max_length - len(waktu_list))
-
-                    target_kpi_list = [int(x) for x in target_kpi_list]
-                    biaya_list = [int(x) for x in biaya_list]
-                    waktu_list = [int(x) for x in waktu_list]
-
-                    program_mitigasi_df = pd.DataFrame({
-                        "Program Mitigasi": mitigasi_list,
-                        "KPI": kpi_list,
-                        "Target KPI": target_kpi_list,
-                        "PIC": pic_list,
-                        "Biaya": biaya_list,
-                        "Waktu Pelaksanaan": waktu_list
-                    })
-
-                    edited_mitigasi_df = st.data_editor(program_mitigasi_df, use_container_width=True, hide_index=True, key=f"table_{idx}")
-                    mitigations_list.append(edited_mitigasi_df)
-
-        st.session_state["mitigations_list"] = mitigations_list
-
-        if st.button("Update dan Gabungkan Semua Mitigasi"):
-            if len(st.session_state["mitigations_list"]) > 0:
-                st.session_state["all_mitigations"] = pd.concat(st.session_state["mitigations_list"], ignore_index=True)
-                st.success("Semua mitigasi berhasil digabungkan!")
+        def kalkulasi(id):
+            anak = df_full[df_full["Parent ID"] == id]
+            if anak.empty:
+                return float(df_full.at[id, "Probabilitas"])
+            tipe = anak["Tipe Hubungan"].iloc[0]
+            prob_list = [kalkulasi(i) for i in anak.index]
+            if tipe == "AND":
+                return round(pd.Series(prob_list).prod(), 5)
             else:
-                st.warning("Tidak ada data mitigasi yang tersedia untuk digabungkan.")
+                return round(1 - pd.Series([(1 - p) for p in prob_list]).prod(), 5)
 
-        st.subheader("Tabel Semua Mitigasi")
-        if not st.session_state["all_mitigations"].empty:
-            updated_all_mitigations = st.data_editor(st.session_state["all_mitigations"], use_container_width=True, hide_index=True, key="all_mitigations_table")
-        else:
-            st.warning("Data mitigasi belum tersedia. Klik tombol untuk menggabungkan mitigasi.")
-def update_monitoring_kpi():
-    import streamlit as st
-    import pandas as pd
+        df_full["Parent ID"] = df_full["Parent ID"].replace(["", "nan"], pd.NA)
+        top_event_candidates = df_full[pd.isna(df_full["Parent ID"])].index
+        if top_event_candidates.empty:
+            st.warning("⚠️ Tidak ditemukan top event dengan Parent ID kosong.")
+            return
+        top_event_id = top_event_candidates[0]
+        hasil = kalkulasi(top_event_id)
+        st.success(f"🎯 Probabilitas Top Event setelah mitigasi adalah: {hasil}")
+    except Exception as e:
+        st.error(f"❌ Gagal menghitung simulasi mitigasi: {e}")
 
-    if "all_mitigations" not in st.session_state:
-        st.session_state["all_mitigations"] = pd.DataFrame()
-    if "update_all_mitigation" not in st.session_state:
-        st.session_state["update_all_mitigation"] = pd.DataFrame()
-    if "monitoring_kpi" not in st.session_state:
-        st.session_state["monitoring_kpi"] = pd.DataFrame()
+def hitung_probabilitas_manual(df):
+    try:
+        df = df.copy()
+        df["Parent ID"] = df["Parent ID"].replace("", pd.NA)
+        df.set_index("ID", inplace=True)
 
-    if st.button("Update All Mitigation"):
-        if not st.session_state["all_mitigations"].empty:
-            st.session_state["update_all_mitigation"] = st.session_state["all_mitigations"]
-            st.success("Data berhasil diperbarui ke 'update_all_mitigation'.")
+        def kalkulasi(id):
+            anak = df[df["Parent ID"] == id]
+            if anak.empty:
+                return float(df.at[id, "Probabilitas"])
+            tipe = anak["Tipe Hubungan"].iloc[0]
+            prob_list = [kalkulasi(i) for i in anak.index]
+            return round(pd.Series(prob_list).prod(), 5) if tipe == "AND" else round(1 - pd.Series([1 - p for p in prob_list]).prod(), 5)
 
-            if "Program Mitigasi" in st.session_state["all_mitigations"].columns:
-                st.session_state["monitoring_kpi"] = pd.DataFrame({
-                    "Mitigasi Risiko": st.session_state["all_mitigations"]["Program Mitigasi"].tolist(),
-                    "KPI Triwulan 1": ["" for _ in range(len(st.session_state["all_mitigations"]))],
-                    "KPI Triwulan 2": ["" for _ in range(len(st.session_state["all_mitigations"]))],
-                    "KPI Triwulan 3": ["" for _ in range(len(st.session_state["all_mitigations"]))],
-                    "KPI Triwulan 4": ["" for _ in range(len(st.session_state["all_mitigations"]))],
-                })
-        else:
-            st.error("Tidak ada data mitigasi yang tersedia untuk diperbarui.")
+        top_event_id = df[pd.isna(df["Parent ID"])].index[0]
+        return kalkulasi(top_event_id)
+    except:
+        return "Error"
 
-    if not st.session_state["monitoring_kpi"].empty:
-        st.subheader("Tabel Monitoring KPI")
-        edited_kpi = st.data_editor(st.session_state["monitoring_kpi"], use_container_width=True, hide_index=True, key="monitoring_kpi_table")
 
-        if st.button("Update Monitoring KPI"):
-            st.session_state["update_monitoring_kpi"] = edited_kpi.copy()
-            st.success("Data Monitoring KPI berhasil disalin ke 'update_monitoring_kpi'.")
-    else:
-        st.warning("Monitoring KPI belum tersedia. Klik tombol 'Update All Mitigation' untuk memperbarui.")
-def save_to_excel(session_data, fig):
-    import pandas as pd
-    from io import BytesIO
+# ======================== SIMPAN FILE ========================
+def simpan_ke_excel():
+    # Ambil nama top event dan format ke nama file-friendly
+    nama_top_event = st.session_state.get("top_event", "top_event_kosong").strip().replace(" ", "_")
+    tanggal = datetime.now().strftime("%d%m%y")
+    nama_file = f"{FOLDER_SIMPAN}/fault_tree_{nama_top_event}_time_{tanggal}.xlsx"
 
-    def save_to_png():
-        img_buffer = BytesIO()
-        fig.savefig(img_buffer, format='png', dpi=150)
-        img_buffer.seek(0)
-        return img_buffer
+    try:
+        with pd.ExcelWriter(nama_file, engine='xlsxwriter') as writer:
+            workbook = writer.book
+            worksheet = workbook.add_worksheet("Rekap FTA")
+            writer.sheets["Rekap FTA"] = worksheet
 
-    img_buffer = save_to_png()
-    output = BytesIO()
+            row = 0
 
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # Sheet 1: Rekap Proyek
-        rekap_df = pd.DataFrame({
-            "Kategori": [
-                "Deskripsi Proyek",
-                "Tujuan Proyek",
-                "Stakeholders",
-                "Tanggal Mulai",
-                "Tanggal Selesai",
-                "Anggaran",
-                "Limit Risiko"
-            ],
-            "Detail": [
-                session_data.get("project_description", "N/A"),
-                session_data.get("project_goal", "N/A"),
-                session_data.get("stakeholders", "N/A"),
-                session_data.get("start_date", "N/A"),
-                session_data.get("end_date", "N/A"),
-                f"Rp {session_data.get('budget', 0):,.2f}",
-                f"Rp {session_data.get('limit_risk', 0):,.2f}"
-            ]
-        })
-        rekap_df.to_excel(writer, sheet_name='Rekap Project', index=False)
+            worksheet.write(row, 0, "Top Event")
+            worksheet.write(row, 1, st.session_state.get("top_event", ""))
+            row += 1
 
-        # Sheet 2: Risk Inherent
-        risk_inherent = session_data.get("Tabel Inherent", [])
-        pd.DataFrame(risk_inherent).to_excel(writer, sheet_name='Risk Inherent', index=False)
+            worksheet.write(row, 0, "Deskripsi")
+            worksheet.write(row, 1, st.session_state.get("deskripsi_event", ""))
+            row += 2
 
-        # Sheet 3: All Mitigation
-        all_mitigation = session_data.get("update_all_mitigation", [])
-        pd.DataFrame(all_mitigation).to_excel(writer, sheet_name='All Mitigation', index=False)
+            worksheet.write(row, 0, "Struktur Event")
+            row += 1
+            df = st.session_state.get(f"copy_{NAMA_TABEL}", pd.DataFrame())
+            if not df.empty:
+                df.to_excel(writer, sheet_name="Rekap FTA", startrow=row, startcol=0, index=False)
+                row += len(df) + 3
 
-        # Sheet 4: Monitoring KPI
-        monitoring_kpi = session_data.get("update_monitoring_kpi", [])
-        pd.DataFrame(monitoring_kpi).to_excel(writer, sheet_name='Monitoring KPI', index=False)
+            worksheet.write(row, 0, "Probabilitas Top Event")
+            worksheet.write(row, 1, str(hitung_probabilitas_manual(df)))
+            row += 2
 
-        # Sheet 5: Risk Matrix Image
-        workbook = writer.book
-        worksheet = workbook.add_worksheet("Risk Matrix Image")
-        writer.sheets["Risk Matrix Image"] = worksheet
-        worksheet.insert_image("B2", "risk_matrix.png", {'image_data': img_buffer})
+            worksheet.write(row, 0, "Rencana Mitigasi")
+            row += 1
+            mitigasi = st.session_state.get("mitigasi_df", pd.DataFrame())
+            if not mitigasi.empty:
+                mitigasi.to_excel(writer, sheet_name="Rekap FTA", startrow=row, startcol=0, index=False)
+                row += len(mitigasi) + 3
 
-    output.seek(0)
-    return output
+            worksheet.write(row, 0, "Simulasi Mitigasi")
+            row += 1
+            simulasi = st.session_state.get("simulasi_df", pd.DataFrame())
+            if not simulasi.empty:
+                simulasi.to_excel(writer, sheet_name="Rekap FTA", startrow=row, startcol=0, index=False)
+                row += len(simulasi) + 3
+
+        st.success(f"✅ File rekap disimpan: {nama_file}")
+    except Exception as e:
+        st.error(f"❌ Gagal menyimpan: {e}")
+
+
+
+# ======================== MAIN ========================
 def main():
-    import streamlit as st
+    st.title("🌳 Fault Tree Analysis (FTA) dengan Bantuan AI")
+    init_session()
+    input_top_event()
 
-    setup_environment()
-    setup_streamlit_styles()
+    if not st.session_state[f"copy_{NAMA_TABEL}"].empty:
+        tampilkan_editor()
+        tampilkan_visualisasi()
+        hitung_probabilitas()
+        identifikasi_kontributor()
+        rencana_mitigasi()
+        simulasi_mitigasi()
 
-    project_description, project_goal, stakeholders, start_date, end_date, input_budget, input_limit_risiko = get_project_inputs()
-    clean_budget, clean_limit_risiko, formatted_budget, formatted_limit_risiko = process_and_validate_budget(input_budget, input_limit_risiko)
-
-    if st.button('Proses'):
-        save_project_data(project_description, project_goal, stakeholders, start_date, end_date, clean_budget, clean_limit_risiko)
-
-    display_project_recap()
-
-    if st.button('Dapatkan Saran Risiko'):
-        suggestion = get_risk_suggestions(project_description, project_goal, stakeholders, start_date, end_date, formatted_budget, formatted_limit_risiko)
-        st.session_state.gpt_response = suggestion
-        st.success("Saran risiko berhasil diperoleh!")
-
-    edit_and_confirm_risks()            # risiko ditampilkan di halaman utama (editable + confirm)
-    identify_and_calculate_risks()      # identifikasi risiko
-    display_risk_matrix()               # matriks risiko
-    edit_and_confirm_mitigations()      # mitigasi (editable + confirm di layar utama)
-    update_monitoring_kpi()             # monitoring KPI
-
-    st.title("Save Session Data to Excel")
-    if st.button("Save to Excel with Risk Matrix Image"):
-        import matplotlib.pyplot as plt
-        fig = plt.gcf()
-        excel_file = save_to_excel(st.session_state, fig)
-        st.download_button(label="Download Excel", data=excel_file, file_name="session_data_with_risk_matrix.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
+   
+    if st.button("💾 Simpan Data ke Excel"):
+        simpan_ke_excel()
+        dot = generate_dot_only()
+        simpan_visualisasi(dot)
+        
 if __name__ == "__main__":
     main()
