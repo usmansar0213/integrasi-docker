@@ -146,7 +146,7 @@ integrasi_modules = {"🧩 Modul Integrasi Data": "data_integrasi"}
 mrtools_modules = {
     "Chat Bot RISMA": "chatbot_risma",
     "Risk Modeling Monte Carlo": "risk_modeling_montecarlo",
-    "Feasibility Study2": "feasibility_study2",
+    "RCSA AI": "rcsa_ai",
     "Feasibility Study": "feasibility_study",
     "Stress Testing": "stress_testing",
     "Altman Z-Score": "altmanz_score",
@@ -265,8 +265,8 @@ def main():
                 render_modul_button("Chat Bot RISMA", key_prefix="btn_mrtools")
             with st.expander("2️⃣ Risk Modeling Monte Carlo"):
                 render_modul_button("Risk Modeling Monte Carlo", key_prefix="btn_mrtools")
-            with st.expander("4️⃣ Feasibility Study2"):
-                render_modul_button("Feasibility Study2", key_prefix="btn_mrtools")
+            with st.expander("3️⃣ RCSA AI"):
+                render_modul_button("RCSA AI", key_prefix="btn_mrtools")
             with st.expander("4️⃣ Feasibility Study"):
                 render_modul_button("Feasibility Study", key_prefix="btn_mrtools")
             with st.expander("5️⃣ Stress Testing"):
