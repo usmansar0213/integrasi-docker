@@ -9,7 +9,7 @@ from modules.utils import get_user_folder, get_user_file
 
 
 # ===== Konfigurasi Streamlit Page =====
-st.set_page_config(page_title="Aplikasi VIA", layout="wide")
+st.set_page_config(page_title="Aplikasi RISMA", layout="wide")
 USER_DATA_PATH = "user_data.csv"
 
 # ===== Tambah path folder modules =====
@@ -261,8 +261,8 @@ def main():
 
     elif menu_selection == "MR Tools":
         with st.sidebar:
-            with st.expander("1️⃣ Chat Bot VIA"):
-                render_modul_button("Chat Bot VIA", key_prefix="btn_mrtools")
+            with st.expander("1️⃣ Chat Bot RISMA"):
+                render_modul_button("Chat Bot RISMA", key_prefix="btn_mrtools")
             with st.expander("2️⃣ Risk Modeling Monte Carlo"):
                 render_modul_button("Risk Modeling Monte Carlo", key_prefix="btn_mrtools")
             with st.expander("3️⃣ RCSA AI"):
@@ -308,8 +308,8 @@ def main():
             st.markdown("""
             🚀 Berikut adalah daftar modul yang tersedia di *MR Tools*, yang dirancang untuk mendukung manajemen risiko dan pengambilan keputusan berbasis data dan AI:
 
-            1. 🤖 **Chat Bot VIA**  
-               VIA adalah asisten virtual pintar yang membantu dalam berbagai analisis risiko dan pengambilan keputusan berbasis data.
+            1. 🤖 **Chat Bot RISMA**  
+               RISMA adalah asisten virtual pintar yang membantu dalam berbagai analisis risiko dan pengambilan keputusan berbasis data.
 
             2. 🎲 **Risk Modeling Monte Carlo**  
                Monte Carlo simulation digunakan untuk memproyeksikan berbagai kemungkinan hasil berdasarkan variabel yang ada.
