@@ -55,7 +55,7 @@ def rcsa_function():
 if __name__ == "__main__":
     rcsa_function()
     
-def run_rcsa():
+def main():
     st.title("Risk and Control Self-Assessment (RCSA)")
     st.write("This is the RCSA module.")
     # Tambahkan logika RCSA Anda di sini
@@ -731,5 +731,6 @@ if 'selected_risks' in st.session_state:
         excel_file = save_to_excel(st.session_state)
         st.download_button(label="Download Excel", data=excel_file, file_name="session_data_with_risk_matrix.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         
-if __name__ == '__main__':
-    run_rcsa()
+
+if __name__ == "__main__":
+    main()
