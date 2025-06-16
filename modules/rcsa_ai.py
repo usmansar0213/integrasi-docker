@@ -1,9 +1,4 @@
 
-# ✅ Fungsi Format Angka
-def format_number_with_comma(number):
-    """Mengonversi angka ke format dengan koma sebagai pemisah ribuan."""
-    return "{:,.2f}".format(number)
-
 # ✅ Import library
 import streamlit as st
 import datetime
@@ -28,8 +23,12 @@ load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 
+# ✅ Fungsi Format Angka
+def format_number_with_comma(number):
+    """Mengonversi angka ke format dengan koma sebagai pemisah ribuan."""
+    return "{:,.2f}".format(number)
+
 def setup_streamlit_styles():
-    import streamlit as st
 
     # Styling tombol
     st.markdown("""
