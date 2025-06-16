@@ -692,7 +692,7 @@ def main():
         import matplotlib.pyplot as plt
         fig = plt.gcf()
         excel_file = save_to_excel(st.session_state, fig)
-        st.download_button(label="Download Excel", data=excel_file, file_name="session_data_with_risk_matrix.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.download_button(label="Download Excel", data=excel_file, file_name="rcsa.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 if __name__ == "__main__":
     main()
