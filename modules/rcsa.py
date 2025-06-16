@@ -661,7 +661,6 @@ def save_to_excel(session_data, fig):
     return output
 def main():
    
-    setup_environment()
     setup_streamlit_styles()
 
     project_description, project_goal, stakeholders, start_date, end_date, input_budget, input_limit_risiko = get_project_inputs()
