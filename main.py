@@ -44,7 +44,7 @@ def sign_in():
     col1.image("static/pelindoicon.jpg", width=200)
     col1.image("static/via_icon.jpg", width=200)
 
-    col2.title("Selamat Datang di Aplikasi VIA")
+    col2.title("Selamat Datang di Aplikasi RISMA")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
     if st.button("Login"):
