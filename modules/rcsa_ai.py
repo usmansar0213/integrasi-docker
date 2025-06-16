@@ -14,6 +14,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+from dotenv import load_dotenv
 from st_aggrid.grid_options_builder import GridOptionsBuilder
 from st_aggrid import AgGrid
 from io import BytesIO
@@ -23,7 +24,8 @@ from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Image
 
 # ✅ Load environment
-openai.api_key = st.secrets["openai_api_key"]
+load_dotenv()
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 
 def setup_streamlit_styles():
