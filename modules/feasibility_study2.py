@@ -621,3 +621,66 @@ def save_to_excel(session_data, fig=None):
 
     output.seek(0)
     return output
+def main():
+    st.set_page_config(page_title="RCSA AI", layout="wide")
+    setup_streamlit_styles()
+
+    st.title("📌 Aplikasi Risk and Control Self-Assessment (RCSA) Berbasis AI")
+
+    # Langkah 1: Input proyek
+    with st.expander("1. Deskripsi Proyek", expanded=True):
+        inputs = get_project_inputs()
+        budget_info = process_and_validate_budget(inputs[5], inputs[6])
+        if st.button("💾 Simpan Data Proyek"):
+            save_project_data(*inputs[:5], *budget_info[:2])
+            st.success("✅ Data proyek disimpan.")
+    
+    display_project_recap()
+
+    # Langkah 2: Dapatkan saran risiko dari GPT
+    if "project_description" in st.session_state and st.button("🤖 Dapatkan Saran Risiko dari AI"):
+        st.session_state["gpt_response"] = get_risk_suggestions(
+            st.session_state["project_description"],
+            st.session_state["project_goal"],
+            st.session_state["stakeholders"],
+            st.session_state["start_date"],
+            st.session_state["end_date"],
+            st.session_state["budget"],
+            st.session_state["limit_risk"]
+        )
+        st.success("✅ Saran risiko berhasil diambil dari AI.")
+
+    # Langkah 3: Edit dan konfirmasi saran risiko
+    if "gpt_response" in st.session_state:
+        edit_and_confirm_risks()
+
+    # Langkah 4: Identifikasi dan hitung inherent risk
+    identify_and_calculate_risks()
+
+    # Langkah 5: Tampilkan matriks risiko
+    fig = display_risk_matrix()
+
+    # Langkah 6: Saran mitigasi dari AI
+    edit_and_confirm_mitigations()
+
+    # Langkah 7: Monitoring KPI
+    update_monitoring_kpi()
+
+    # Ekspor hasil ke Excel
+    if st.button("📁 Simpan Hasil ke Excel"):
+        session_data = {
+            "project_description": st.session_state.get("project_description", ""),
+            "project_goal": st.session_state.get("project_goal", ""),
+            "stakeholders": st.session_state.get("stakeholders", ""),
+            "start_date": st.session_state.get("start_date", ""),
+            "end_date": st.session_state.get("end_date", ""),
+            "budget": st.session_state.get("budget", 0),
+            "limit_risk": st.session_state.get("limit_risk", 0),
+            "Tabel Inherent": st.session_state.get("Tabel Inherent", []),
+            "all_mitigations": st.session_state.get("all_mitigations", pd.DataFrame()),
+            "update_monitoring_kpi": st.session_state.get("update_monitoring_kpi", pd.DataFrame())
+        }
+
+        excel_file = save_to_excel(session_data, fig)
+        st.download_button("📥 Unduh Excel RCSA", data=excel_file, file_name="rcsa_ai_output.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
