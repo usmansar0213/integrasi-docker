@@ -1,475 +1,438 @@
 import streamlit as st
-import datetime
-import re
-import openai
+import numpy as np
 import pandas as pd
 import os
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from dotenv import load_dotenv
-from st_aggrid.grid_options_builder import GridOptionsBuilder
-from st_aggrid import AgGrid
-from io import BytesIO
-from reportlab.lib.pagesizes import letter, landscape
-from reportlab.pdfgen import canvas
-from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Image
 
-load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
-def format_number_with_comma(number):
-    return "{:,.2f}".format(number)
+def main():
+    import streamlit as st
+    import pandas as pd
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import numpy_financial as npf
+    from sklearn.linear_model import LinearRegression
+    from sklearn.ensemble import RandomForestRegressor
+    from sklearn.model_selection import train_test_split
+    from sklearn.metrics import mean_squared_error
+    from st_aggrid import AgGrid, GridOptionsBuilder
+    from scipy.optimize import newton
 
-def setup_streamlit_styles():
-    st.markdown("""
-    <style>
-    div.stButton > button {
-        background-color: #FF4B4B;
-        color: white;
-        font-size: 16px;
-        font-weight: bold;
-        padding: 10px 20px;
-        border-radius: 8px;
-        border: none;
-        transition: 0.3s;
-    }
-    div.stButton > button:hover {
-        background-color: #D62828;
-        color: white;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+    
+    # Inisialisasi session state jika belum ada
+    if 'investment_data' not in st.session_state:
+        st.session_state['investment_data'] = {
+            'judul_investasi': "Investasi Saham",
+            'currency': "USD",
+            'initial_investment': 5000,
+            'risk_tolerance': "Menengah",
+            'investment_goal': "Pendapatan pasif"
+        }
 
-    st.markdown("""
-    <style>
-    body { font-size: 20px; }
-    h1 { font-size: 36px; }
-    h2 { font-size: 30px; }
-    h3 { font-size: 24px; }
-    p { font-size: 20px; }
-    .stDataFrame table, .stTable, .stText { width: 100% !important; }
-    </style>
-    """, unsafe_allow_html=True)
-def get_project_inputs():
-    col1, col2 = st.columns([1, 3])
+    # Judul Utama dengan Ikon
+    col1, col2 = st.columns([1, 10])
+
+    # Path relatif ke logo
+    logo_path = os.path.join("static", "via_icon.jpg")
+
     with col1:
-        st.image("static/via_icon.jpg", width=200)
+        if os.path.exists(logo_path):
+            st.image(logo_path, width=150)
+        else:
+            st.warning("Logo tidak ditemukan di folder static/")
 
     with col2:
-        st.markdown("""
-        <div style='display: flex; flex-direction: column; justify-content: flex-start; align-items: flex-start; margin-top: -30px;'>
-            <h1 style='font-size:30px; font-weight: bold; color: #333;'>RCSA Berbasis AI</h1>
-            <p style='font-size: 18px; color: #666;'>Aplikasi Risk and Control Self-Assessment (RCSA) berbasis AI...</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.title("Studi Kelayakan Proyek")
 
-    project_description = st.text_area('Deskripsikan proyek Anda', '...')
-    project_goal = st.text_area('Apa tujuan dari proyek Anda?', '...')
-    stakeholders = st.text_area('Siapa saja stakeholder yang terlibat?', '- ...')
+    # Input nama investasi dengan default dari session_state
+    judul_default = st.session_state.get('investment_data', {}).get('judul_investasi', '')
+    judul_investasi = st.text_input("Masukkan nama investasi:", value=judul_default)
 
-    start_date = st.date_input('Tanggal Mulai', value=datetime.date(2025, 4, 1))
-    end_date = st.date_input('Tanggal Selesai', min_value=start_date, value=start_date + datetime.timedelta(days=270))
+    st.subheader(f"{judul_investasi}")
 
-    input_budget = st.text_input('Berapa anggaran untuk proyek ini?', '75,000,000,000.00')
-    input_limit_risiko = st.text_input('Berapa Limit Risiko untuk proyek ini?', '5,000,000,000.00')
+    # Langkah 1: Masukkan Informasi Rencana Investasi
+    st.header("1. Informasi Rencana Investasi")
 
-    return project_description, project_goal, stakeholders, start_date, end_date, input_budget, input_limit_risiko
-def process_and_validate_budget(input_budget, input_limit_risiko):
-    clean_budget = 0
-    clean_limit_risiko = 0
-    formatted_budget = ""
-    formatted_limit_risiko = ""
-
-    if input_budget:
-        try:
-            clean_budget = float(input_budget.replace(",", ""))
-            formatted_budget = format_number_with_comma(clean_budget)
-            st.session_state.budget = clean_budget
-        except ValueError:
-            st.error("Format anggaran salah. Masukkan angka valid.")
-
-    if input_limit_risiko:
-        try:
-            clean_limit_risiko = float(input_limit_risiko.replace(",", ""))
-            formatted_limit_risiko = format_number_with_comma(clean_limit_risiko)
-            st.session_state.limit_risk = clean_limit_risiko
-        except ValueError:
-            st.error("Format limit risiko salah. Masukkan angka valid.")
-
-    return clean_budget, clean_limit_risiko, formatted_budget, formatted_limit_risiko
-
-
-def save_project_data(project_description, project_goal, stakeholders, start_date, end_date, clean_budget, clean_limit_risiko):
-    st.session_state.project_description = project_description
-    st.session_state.project_goal = project_goal
-    st.session_state.stakeholders = stakeholders
-    st.session_state.start_date = start_date
-    st.session_state.end_date = end_date
-    st.session_state.budget = clean_budget
-    st.session_state.limit_risk = clean_limit_risiko
-    st.success("Data berhasil disimpan!")
-def display_project_recap():
-    if "project_description" in st.session_state:
-        st.subheader("📋 Rekap Proyek")
-        st.write(f"**📌 Deskripsi Proyek:**\n{st.session_state.project_description}")
-        st.write(f"**🎯 Tujuan Proyek:**\n{st.session_state.project_goal}")
-        st.write(f"**👥 Stakeholders:**\n{st.session_state.stakeholders}")
-        st.write(f"**📅 Tanggal Mulai:** {st.session_state.start_date}")
-        st.write(f"**📅 Tanggal Selesai:** {st.session_state.end_date}")
-        st.write(f"**💰 Anggaran:** Rp {format_number_with_comma(st.session_state.budget)}")
-        st.write(f"**⚠️ Limit Risiko:** Rp {format_number_with_comma(st.session_state.limit_risk)}")
-def get_risk_suggestions(project_description, project_goal, stakeholders, start_date, end_date, project_budget, limit_risk):
-    prompt = f"""
-    Berikut deskripsi proyek, tujuan, stakeholder, tanggal mulai, tanggal selesai, anggaran, dan limit risiko:
-    Deskripsi: {project_description}
-    Tujuan: {project_goal}
-    Stakeholders: {stakeholders}
-    Tanggal Mulai: {start_date}
-    Tanggal Selesai: {end_date}
-    Anggaran: {project_budget}
-    Limit Risiko: {limit_risk}
-
-    Silakan berikan saran risiko yang mungkin terjadi dalam proyek ini terkait dengan kategori berikut:
-    1. Kontraktual
-    2. Keuangan & Pembayaran
-    3. Komersial
-    4. Operasi
-    5. Teknik
-    6. Hukum
-    7. Reputasi
-    8. Lingkungan
-    """
-
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant for project risk assessment."},
-            {"role": "user", "content": prompt}
-        ],
-        max_tokens=500
+    # Input untuk mata uang dan modal awal
+    mata_uang = st.selectbox(
+        "Pilih mata uang:",
+        ["USD", "Rupiah"],
+        index=["USD", "Rupiah"].index(st.session_state['investment_data']['currency'])
     )
-    return response.choices[0].message['content']
-def display_risk_suggestions():
-    if "gpt_response" in st.session_state:
-        risk_list = st.session_state.gpt_response.split('\n')
-        relevant_risks = [risk.strip() for risk in risk_list if risk.strip()]
+    modal = st.number_input(
+        f"Berapa jumlah dana yang ingin Anda investasikan pada {judul_investasi} (dalam {mata_uang})?",
+        min_value=1,
+        value=st.session_state['investment_data']['initial_investment']
+    )
 
-        with st.sidebar:
-            selected_risks = []
-            st.subheader("Pilih Risiko dari Saran AI")
-            for risk in relevant_risks:
-                if risk.endswith(':'):
-                    st.markdown(f"**{risk}**")
-                else:
-                    checkbox = st.checkbox(risk, key=f"ai_risk_checkbox_{risk}")
-                    if checkbox:
-                        selected_risks.append(risk)
-            st.session_state.selected_risks = selected_risks
-def identify_and_calculate_risks():
-    if "selected_risks" in st.session_state:
-        st.subheader("3. Identifikasi Risiko")
-        inherent_risks = {}
-        risk_data = []
-        risk_number = 1
-        total_inherent_risk_exposure = 0
-        limit_risk = st.session_state.limit_risk if "limit_risk" in st.session_state else 1.0
+    # Input toleransi risiko dan tujuan investasi
+    toleransi_risiko = st.radio(
+        "Seberapa besar risiko yang bersedia Anda tanggung?",
+        ("Rendah", "Menengah", "Tinggi"),
+        index=["Rendah", "Menengah", "Tinggi"].index(st.session_state['investment_data']['risk_tolerance'])
+    )
+    tujuan_investasi = st.selectbox(
+        "Apa tujuan utama dari investasi ini?",
+        ("Pendapatan pasif", "Pertumbuhan modal", "Diversifikasi portfolio"),
+        index=["Pendapatan pasif", "Pertumbuhan modal", "Diversifikasi portfolio"].index(st.session_state['investment_data']['investment_goal'])
+    )
 
-        for risk in st.session_state.selected_risks:
-            with st.expander(risk):
-                impact = st.text_input(f"Masukkan Nilai Dampak untuk {risk}", '1,000,000,000', key=risk+"_impact")
-                if impact:
-                    try:
-                        clean_impact = float(impact.replace(",", ""))
-                        formatted_impact = format_number_with_comma(clean_impact)
+    # Simpan data ke `st.session_state`
+    st.session_state['investment_data']['judul_investasi'] = judul_investasi
+    st.session_state['investment_data']['currency'] = mata_uang
+    st.session_state['investment_data']['initial_investment'] = modal
+    st.session_state['investment_data']['risk_tolerance'] = toleransi_risiko
+    st.session_state['investment_data']['investment_goal'] = tujuan_investasi
 
-                        # Skala dampak
-                        if clean_impact > 0.80 * limit_risk:
-                            impact_scale = 5
-                        elif 0.60 * limit_risk < clean_impact <= 0.80 * limit_risk:
-                            impact_scale = 4
-                        elif 0.40 * limit_risk < clean_impact <= 0.60 * limit_risk:
-                            impact_scale = 3
-                        elif 0.20 * limit_risk < clean_impact <= 0.40 * limit_risk:
-                            impact_scale = 2
-                        else:
-                            impact_scale = 1
+        
+    # Langkah 2: Input untuk analisis SWOT
+    st.header("2. Analisis SWOT")
 
-                        # Pilihan kemungkinan
-                        likelihood_options = {
-                            1: "1 - Sangat rendah (< 20%)",
-                            2: "2 - Rendah (20% - 40%)",
-                            3: "3 - Sedang (40% - 60%)",
-                            4: "4 - Tinggi (60% - 80%)",
-                            5: "5 - Sangat tinggi (> 80%)"
-                        }
-                        likelihood_labels = list(likelihood_options.values())
-                        likelihood_values = list(likelihood_options.keys())
-                        likelihood = st.selectbox(f"Masukkan Skala Kemungkinan untuk {risk}", likelihood_labels, index=2, key=risk+"_likelihood")
-                        likelihood_value = likelihood_values[likelihood_labels.index(likelihood)]
-                        likelihood_percentage = likelihood_value * 0.20
+    # Menyediakan contoh untuk analisis SWOT umum
+    st.subheader("Kekuatan (Strengths)")
+    kekuatan_contoh = """
+    - **Keunggulan Kompetitif**: Memiliki pasar yang kuat dan loyalitas pelanggan.
+    - **Diversifikasi Pendapatan**: Sumber pendapatan yang bervariasi.
+    - **Inovasi Berkelanjutan**: Investasi yang konsisten dalam teknologi dan produk baru.
+    """
+    kekuatan = st.text_area("Masukkan Kekuatan (Strengths):", value=kekuatan_contoh, height=150)
 
-                        inherent_risk_exposure_value = clean_impact * likelihood_percentage
-                        inherent_risks[risk] = {
-                            "impact": formatted_impact,
-                            "impact_scale": impact_scale,
-                            "likelihood_percentage": likelihood_percentage * 100,
-                            "inherent_risk_exposure": inherent_risk_exposure_value,
-                        }
+    st.subheader("Kelemahan (Weaknesses)")
+    kelemahan_contoh = """
+    - **Ketergantungan pada Segmen Utama**: Pendapatan signifikan berasal dari satu segmen utama.
+    - **Masalah Regulasi**: Tantangan terkait dengan kepatuhan hukum dan peraturan.
+    - **Biaya Operasional Tinggi**: Profitabilitas dapat terpengaruh oleh biaya operasional.
+    """
+    kelemahan = st.text_area("Masukkan Kelemahan (Weaknesses):", value=kelemahan_contoh, height=150)
 
-                        risk_data.append({
-                            "No": risk_number,
-                            "Risiko": risk,
-                            "Dampak": formatted_impact,
-                            "Skala Dampak": impact_scale,
-                            "Skala Kemungkinan": likelihood_value,
-                            "Kemungkinan (%)": likelihood_percentage * 100,
-                            "Inherent Risk Exposure": format_number_with_comma(inherent_risk_exposure_value),
-                        })
+    st.subheader("Peluang (Opportunities)")
+    peluang_contoh = """
+    - **Ekspansi Pasar Baru**: Potensi untuk memasuki pasar baru.
+    - **Pertumbuhan Industri**: Tren positif di sektor terkait.
+    - **Kemitraan Strategis**: Peluang untuk bermitra dengan pemain besar lainnya.
+    """
+    peluang = st.text_area("Masukkan Peluang (Opportunities):", value=peluang_contoh, height=150)
 
-                        total_inherent_risk_exposure += inherent_risk_exposure_value
-                        st.session_state["total_inherent_risk_exposure"] = total_inherent_risk_exposure
-                        risk_number += 1
-                    except ValueError:
-                        st.error(f"Format dampak salah untuk {risk}. Masukkan angka valid.")
+    st.subheader("Ancaman (Threats)")
+    ancaman_contoh = """
+    - **Persaingan yang Ketat**: Hadirnya pesaing besar di pasar.
+    - **Perubahan Regulasi**: Kebijakan pemerintah yang dapat memengaruhi operasi.
+    - **Fluktuasi Ekonomi**: Ketidakpastian ekonomi global yang dapat memengaruhi permintaan.
+    """
+    ancaman = st.text_area("Masukkan Ancaman (Threats):", value=ancaman_contoh, height=150)
 
-        if risk_data:
-            st.subheader("4. Tabel Inherent Risk Exposure")
-            risk_df = pd.DataFrame(risk_data)
-            total_row = pd.DataFrame([{
-                "No": "",
-                "Risiko": "Total Inherent Risk Exposure",
-                "Dampak": "",
-                "Skala Dampak": "",
-                "Skala Kemungkinan": "",
-                "Kemungkinan (%)": "",
-                "Inherent Risk Exposure": format_number_with_comma(total_inherent_risk_exposure),
-            }])
-            risk_df = pd.concat([risk_df, total_row], ignore_index=True)
-            st.session_state["Tabel Inherent"] = risk_df.to_dict(orient="records")
-            st.table(risk_df)
-            st.write(f"Total Inherent Risk Exposure: {format_number_with_comma(total_inherent_risk_exposure)}")
-def display_risk_matrix():
-    if "Tabel Inherent" in st.session_state:
-        st.subheader("5. Matriks Risiko Inherent")
-        risk_df = pd.DataFrame(st.session_state["Tabel Inherent"])
-        risk_df = risk_df.dropna(subset=["Skala Dampak", "Skala Kemungkinan"])
-        risk_df["Skala Dampak"] = risk_df["Skala Dampak"].astype(int)
-        risk_df["Skala Kemungkinan"] = risk_df["Skala Kemungkinan"].astype(int)
 
-        risk_labels = {
-            (1, 1): ('Low', 1), (1, 2): ('Low', 5), (1, 3): ('Low to Moderate', 10), (1, 4): ('Moderate', 15), (1, 5): ('High', 20),
-            (2, 1): ('Low', 2), (2, 2): ('Low to Moderate', 6), (2, 3): ('Low to Moderate', 11), (2, 4): ('Moderate to High', 16), (2, 5): ('High', 21),
-            (3, 1): ('Low', 3), (3, 2): ('Low to Moderate', 8), (3, 3): ('Moderate', 13), (3, 4): ('Moderate to High', 18), (3, 5): ('High', 23),
-            (4, 1): ('Low', 4), (4, 2): ('Low to Moderate', 9), (4, 3): ('Moderate', 14), (4, 4): ('Moderate to High', 19), (4, 5): ('High', 24),
-            (5, 1): ('Low to Moderate', 7), (5, 2): ('Moderate', 12), (5, 3): ('Moderate to High', 17), (5, 4): ('High', 22), (5, 5): ('High', 25)
-        }
+    st.header("3. Asumsi Evaluasi Finansial")
 
-        color_matrix = np.full((5, 5), 'white', dtype=object)
-        risk_matrix_labels = [['' for _ in range(5)] for _ in range(5)]
-
-        for coord, (label, _) in risk_labels.items():
-            impact_idx = coord[0] - 1
-            likelihood_idx = coord[1] - 1
-            if label == 'High':
-                color_matrix[likelihood_idx][impact_idx] = 'red'
-            elif label == 'Moderate to High':
-                color_matrix[likelihood_idx][impact_idx] = 'orange'
-            elif label == 'Moderate':
-                color_matrix[likelihood_idx][impact_idx] = 'yellow'
-            elif label == 'Low to Moderate':
-                color_matrix[likelihood_idx][impact_idx] = 'lightgreen'
-            elif label == 'Low':
-                color_matrix[likelihood_idx][impact_idx] = 'darkgreen'
-
-        for index, row in risk_df.iterrows():
-            try:
-                skala_dampak = int(row['Skala Dampak'])
-                skala_kemungkinan = int(row['Skala Kemungkinan'])
-                nomor_risiko = f"#{row['No']}"
-                if 1 <= skala_kemungkinan <= 5 and 1 <= skala_dampak <= 5:
-                    current_label = risk_matrix_labels[skala_kemungkinan - 1][skala_dampak - 1]
-                    risk_matrix_labels[skala_kemungkinan - 1][skala_dampak - 1] = (
-                        current_label + ", " + nomor_risiko if current_label else nomor_risiko
-                    )
-            except ValueError:
-                continue
-
-        fig, ax = plt.subplots(figsize=(5, 3), dpi=150)
-        for i in range(5):  # likelihood (y-axis)
-            for j in range(5):  # impact (x-axis)
-                ax.add_patch(plt.Rectangle((j, i), 1, 1, color=color_matrix[i, j], edgecolor='black', linewidth=0.5))
-                label, number = risk_labels.get((j + 1, i + 1), ('', ''))
-                ax.text(j + 0.5, i + 0.7, label, ha='center', va='center', fontsize=5, color='black')
-                ax.text(j + 0.5, i + 0.5, str(number), ha='center', va='center', fontsize=5, color='black')
-                ax.text(j + 0.5, i + 0.3, risk_matrix_labels[i][j], ha='center', va='center', fontsize=5, color='blue')
-
-        ax.set_xlim(0, 5)
-        ax.set_ylim(0, 5)
-        ax.set_xticks(np.arange(5) + 0.5)
-        ax.set_yticks(np.arange(5) + 0.5)
-        ax.set_xticklabels([1, 2, 3, 4, 5], fontsize=5)
-        ax.set_yticklabels([1, 2, 3, 4, 5], fontsize=5)
-        ax.set_xlabel("Skala Dampak", fontsize=10)
-        ax.set_ylabel("Skala Kemungkinan", fontsize=10)
-        ax.set_xticks(np.arange(0, 6, 1), minor=True)
-        ax.set_yticks(np.arange(0, 6, 1), minor=True)
-        ax.grid(which='minor', color='black', linestyle='-', linewidth=0.5)
-        plt.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.1)
-
-        st.pyplot(fig)
-        return fig
-def edit_and_confirm_mitigations():
-    if "selected_risks" in st.session_state:
-        st.subheader("6. Edit & Konfirmasi Saran Mitigasi per Risiko")
-
-        if "confirmed_mitigations_per_risk" not in st.session_state:
-            st.session_state.confirmed_mitigations_per_risk = {}
-
-        for risk in st.session_state.selected_risks:
-            with st.expander(f"Risiko: {risk}"):
-                if risk not in st.session_state or st.button(f"Peroleh Saran Mitigasi untuk {risk}", key=f"get_mitigation_{risk}"):
-                    st.session_state[risk] = get_risk_handling_suggestions(risk)
-
-                if risk in st.session_state:
-                    raw = st.session_state[risk]
-                    mitigasi_list = re.findall(r"Program Mitigasi:\s*(.+)", raw)
-                    kpi_list = re.findall(r"KPI:\s*([^:]+)", raw)
-                    target_kpi_list = re.findall(r"Target KPI:\s*(\d+)", raw)
-                    pic_list = re.findall(r"PIC:\s*(.+)", raw)
-                    biaya_list = re.findall(r"Biaya:\s*(\d+)", raw)
-                    waktu_list = re.findall(r"Waktu Pelaksanaan:\s*(\d+)", raw)
-
-                    max_len = max(len(mitigasi_list), len(kpi_list), len(target_kpi_list), len(pic_list), len(biaya_list), len(waktu_list))
-                    mitigasi_list += [""] * (max_len - len(mitigasi_list))
-                    kpi_list += [""] * (max_len - len(kpi_list))
-                    target_kpi_list += ["0"] * (max_len - len(target_kpi_list))
-                    pic_list += ["Belum Ditentukan"] * (max_len - len(pic_list))
-                    biaya_list += ["0"] * (max_len - len(biaya_list))
-                    waktu_list += ["0"] * (max_len - len(waktu_list))
-
-                    mitigasi_df = pd.DataFrame({
-                        "Program Mitigasi": mitigasi_list,
-                        "KPI": kpi_list,
-                        "Target KPI": list(map(int, target_kpi_list)),
-                        "PIC": pic_list,
-                        "Biaya": list(map(int, biaya_list)),
-                        "Waktu Pelaksanaan": list(map(int, waktu_list)),
-                    })
-
-                    edited_df = st.data_editor(mitigasi_df, use_container_width=True, hide_index=True, key=f"edited_{risk}")
-                    if st.button(f"Konfirmasi Mitigasi untuk {risk}", key=f"confirm_mitigation_{risk}"):
-                        st.session_state.confirmed_mitigations_per_risk[risk] = edited_df
-                        st.success(f"✅ Mitigasi untuk '{risk}' berhasil dikonfirmasi!")
-
-        # Gabung semua ke satu tabel
-        all_mitigations = []
-        for r in st.session_state.selected_risks:
-            if r in st.session_state.confirmed_mitigations_per_risk:
-                all_mitigations.append(st.session_state.confirmed_mitigations_per_risk[r])
-
-        if all_mitigations:
-            st.session_state.all_mitigations = pd.concat(all_mitigations, ignore_index=True)
-            st.subheader("✅ Tabel Semua Mitigasi (Final)")
-            st.data_editor(st.session_state.all_mitigations, use_container_width=True, hide_index=True, key="final_mitigations")
-        else:
-            st.info("Belum ada mitigasi yang dikonfirmasi.")
-def update_monitoring_kpi():
-    if "all_mitigations" not in st.session_state:
-        st.session_state["all_mitigations"] = pd.DataFrame()
-    if "update_all_mitigation" not in st.session_state:
-        st.session_state["update_all_mitigation"] = pd.DataFrame()
-    if "monitoring_kpi" not in st.session_state:
-        st.session_state["monitoring_kpi"] = pd.DataFrame()
-
-    if st.button("Update All Mitigation"):
-        if not st.session_state["all_mitigations"].empty:
-            st.session_state["update_all_mitigation"] = st.session_state["all_mitigations"].copy()
-            st.success("✅ Data mitigasi disalin ke tabel monitoring.")
-            st.session_state["monitoring_kpi"] = pd.DataFrame({
-                "Mitigasi Risiko": st.session_state["all_mitigations"]["Program Mitigasi"].tolist(),
-                "KPI Triwulan 1": ["" for _ in range(len(st.session_state["all_mitigations"]))],
-                "KPI Triwulan 2": ["" for _ in range(len(st.session_state["all_mitigations"]))],
-                "KPI Triwulan 3": ["" for _ in range(len(st.session_state["all_mitigations"]))],
-                "KPI Triwulan 4": ["" for _ in range(len(st.session_state["all_mitigations"]))],
-            })
-        else:
-            st.error("⚠️ Tidak ada data mitigasi untuk diperbarui.")
-
-    if not st.session_state["monitoring_kpi"].empty:
-        st.subheader("📊 Tabel Monitoring KPI")
-        edited_kpi = st.data_editor(st.session_state["monitoring_kpi"], use_container_width=True, hide_index=True, key="monitoring_kpi_table")
-
-        if st.button("Update Monitoring KPI"):
-            st.session_state["update_monitoring_kpi"] = edited_kpi.copy()
-            st.success("✅ Monitoring KPI berhasil diperbarui.")
+    # Tabel asumsi finansial yang dapat diedit oleh pengguna
+    file_diupload = st.file_uploader("Upload CSV untuk Asumsi Finansial (Opsional):", type=["csv"])
+    if file_diupload is not None:
+        asumsi_df = pd.read_csv(file_diupload)
     else:
-        st.warning("Belum ada data monitoring KPI.")
-def main():
-    st.set_page_config(page_title="RCSA AI", layout="wide")
-    setup_streamlit_styles()
-
-    st.title("📌 Aplikasi Risk and Control Self-Assessment (RCSA) Berbasis AI")
-
-    # Langkah 1: Input Proyek
-    with st.expander("1. Deskripsi Proyek", expanded=True):
-        inputs = get_project_inputs()
-        budget_info = process_and_validate_budget(inputs[5], inputs[6])
-        if st.button("💾 Simpan Data Proyek"):
-            save_project_data(*inputs[:5], *budget_info[:2])
-    
-    display_project_recap()
-
-    # Langkah 2: Ambil saran risiko dari AI
-    if "project_description" in st.session_state and st.button("🤖 Dapatkan Saran Risiko dari AI"):
-        st.session_state["gpt_response"] = get_risk_suggestions(
-            st.session_state["project_description"],
-            st.session_state["project_goal"],
-            st.session_state["stakeholders"],
-            st.session_state["start_date"],
-            st.session_state["end_date"],
-            st.session_state["budget"],
-            st.session_state["limit_risk"]
-        )
-        st.success("✅ Saran risiko berhasil diambil dari AI.")
-
-    # Langkah 3: Edit & konfirmasi risiko
-    if "gpt_response" in st.session_state:
-        display_risk_suggestions()
-
-    # Langkah 4: Identifikasi dan perhitungan inherent risk
-    identify_and_calculate_risks()
-
-    # Langkah 5: Matriks risiko
-    fig = display_risk_matrix()
-
-    # Langkah 6: Mitigasi risiko
-    edit_and_confirm_mitigations()
-
-    # Langkah 7: Monitoring KPI
-    update_monitoring_kpi()
-
-    # Langkah 8: Simpan ke Excel
-    if st.button("📁 Simpan Hasil ke Excel"):
-        session_data = {
-            "project_description": st.session_state.get("project_description", ""),
-            "project_goal": st.session_state.get("project_goal", ""),
-            "stakeholders": st.session_state.get("stakeholders", ""),
-            "start_date": st.session_state.get("start_date", ""),
-            "end_date": st.session_state.get("end_date", ""),
-            "budget": st.session_state.get("budget", 0),
-            "limit_risk": st.session_state.get("limit_risk", 0),
-            "Tabel Inherent": st.session_state.get("Tabel Inherent", []),
-            "all_mitigations": st.session_state.get("all_mitigations", pd.DataFrame()),
-            "update_monitoring_kpi": st.session_state.get("update_monitoring_kpi", pd.DataFrame())
+        # Gunakan mata uang dari session state (default "USD" jika tidak tersedia)
+        mata_uang = st.session_state.get('currency', "USD")
+        data_asumsi = {
+            'Asumsi': [
+                'Tingkat Pertumbuhan Laba Bersih (%)',
+                'Tingkat Pembayaran Dividen (%)',
+                'Tingkat Diskonto (%)',
+                'Tingkat Inflasi (%)',
+                'Tingkat Suku Bunga (%)',
+                f'Harga Saat Ini ',
+                f'Estimasi Laba Bersih Tahun Pertama'
+            ],
+            'Nilai': [5.0, 30.0, 10.0, 2.0, 3.0, 100, 1.0]
         }
+        asumsi_df = pd.DataFrame(data_asumsi)
 
-        excel_file = save_to_excel(session_data, fig)
-        st.download_button(
-            label="📥 Unduh Laporan RCSA",
-            data=excel_file,
-            file_name="rcsa_ai_output.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-if __name__ == "__main__":
-    main()
+    # Konfigurasi AgGrid untuk memungkinkan pengeditan
+    gb = GridOptionsBuilder.from_dataframe(asumsi_df)
+    gb.configure_default_column(editable=True)
+    gb.configure_grid_options(domLayout='normal')  # Menambahkan pengaturan tinggi tabel
+    opsi_grid = gb.build()
+
+    # Menampilkan tabel interaktif menggunakan AgGrid
+    data_diedit = AgGrid(
+        asumsi_df,
+        gridOptions=opsi_grid,
+        update_mode="MODEL_CHANGED",
+        fit_columns_on_grid_load=True,
+        height=250  # Menentukan tinggi tabel dalam piksel
+    )
+
+    asumsi_diperbarui_df = pd.DataFrame(data_diedit['data'])
+
+
+    st.header("4. Upload Data History Perusahaan")
+    file_diupload = st.file_uploader("Upload file Excel", type=["xlsx"])
+    if file_diupload:
+        df = pd.read_excel(file_diupload)
+        st.write("Data yang diupload:", df.head())
+
+        # Mencari nama kolom tahun
+        year_column = None
+        for col in df.columns:
+            if col.lower() in ['year', 'tahun']:
+                year_column = col
+                break
+
+        if year_column is None:
+            st.warning("Kolom 'Year' atau 'Tahun' tidak ditemukan. Silakan pilih kolom yang sesuai.")
+            year_column = st.selectbox("Pilih kolom yang mewakili tahun:", df.columns)
+
+        if year_column:
+            variabel = [col for col in df.columns if col != year_column]
+            variabel_tergantung = st.selectbox("Pilih dependent variable:", variabel, key="dependent_var")
+            variabel_mandiri = st.multiselect("Pilih independent variables:", variabel, key="independent_vars")
+
+            if variabel_mandiri and variabel_tergantung:
+                st.subheader("Langkah 2: Input Target Value")
+                nilai_target = st.slider("Masukkan Target Value:", min_value=-10000.0, max_value=10000.0, value=5.0, step=0.1, key="target_value")
+
+                tahun_terakhir = df[year_column].max()
+                tahun_prediksi = st.slider("Tahun untuk diprediksi:", 1, 20, 10, key="prediction_years")
+                tahun_mendatang = np.array(range(tahun_terakhir + 1, tahun_terakhir + 1 + tahun_prediksi)).reshape(-1, 1)
+
+                if st.button("Proses Data", key="process_data"):
+                    # Simpan data ke session state
+                    st.session_state['data_asumsi'] = asumsi_diperbarui_df
+                    st.session_state['data_history'] = df
+
+                    # Lakukan simulasi
+                    prediksi = {}
+                    variabel_disesuaikan = []
+
+                    for var in variabel_mandiri:
+                        model = LinearRegression()
+                        asumsi_terkait = st.session_state['data_asumsi'][
+                            st.session_state['data_asumsi']['Asumsi'].str.contains(var, case=False, na=False)]
+                        if not asumsi_terkait.empty:
+                            st.write(f"Menggunakan asumsi terkait untuk {var}: {asumsi_terkait.iloc[0]['Nilai']}")
+                            variabel_disesuaikan.append(var)
+
+                        model.fit(df[[year_column]], df[var])
+                        prediksi[var] = model.predict(tahun_mendatang)
+
+                    data_histori = df[[year_column] + variabel_mandiri].sort_values(by=year_column, ascending=False)
+                    data_mendatang = pd.DataFrame({year_column: tahun_mendatang.flatten(), **prediksi})
+                    gabungan_df = pd.concat([data_histori, data_mendatang], ignore_index=True).sort_values(by=year_column, ascending=False)
+
+                    st.session_state['processed_data'] = gabungan_df
+
+                    # Tampilkan data gabungan
+                    st.subheader("Data Gabungan")
+                    opsi_grid = GridOptionsBuilder.from_dataframe(gabungan_df)
+                    opsi_grid.configure_default_column(editable=True)
+                    konfigurasi_grid = opsi_grid.build()
+                    AgGrid(
+                        gabungan_df,
+                        gridOptions=konfigurasi_grid,
+                        update_mode='MODEL_CHANGED',
+                        allow_unsafe_jscode=True
+                    )
+
+                    if variabel_disesuaikan:
+                        st.subheader("Variabel yang Disesuaikan")
+                        for var in variabel_disesuaikan:
+                            st.write(f"- {var}")
+                    else:
+                        st.write("Tidak ada variabel yang disesuaikan dengan asumsi.")
+
+                st.header("Langkah 5: Regresi dan Simulasi Monte Carlo")
+                # Define variables from user selection
+                independent_variables = variabel_mandiri  # Variables selected earlier in multiselect
+                dependent_variable = variabel_tergantung  # Variable selected earlier in selectbox
+
+                # Ensure variables are defined
+                if not independent_variables or not dependent_variable:
+                    st.error("Please select both independent and dependent variables before proceeding.")
+                else:
+                    # Simulasi Regresi Linear
+                    model_regresi = LinearRegression()
+                    model_regresi.fit(df[independent_variables], df[dependent_variable])
+
+                    jumlah_simulasi = st.number_input("Masukkan jumlah simulasi:", min_value=100, step=100, value=1000)
+
+                    hasil_monte_carlo = []
+                    for _ in range(jumlah_simulasi):
+                        nilai_simulasi = {}
+                        for i, var in enumerate(independent_variables):
+                            nilai_simulasi[var] = np.random.normal(df[var].mean(), df[var].std(), 1)[0]
+                        nilai_prediksi = model_regresi.intercept_ + sum(
+                            model_regresi.coef_[i] * nilai_simulasi[var] for i, var in enumerate(independent_variables)
+                        )
+                        hasil_monte_carlo.append(nilai_prediksi)
+
+                    r_squared = model_regresi.score(df[independent_variables], df[dependent_variable])
+                    tingkat_kepercayaan = 5
+                    var = np.percentile(hasil_monte_carlo, tingkat_kepercayaan)
+
+                    monte_carlo_bulat = [round(value) for value in hasil_monte_carlo]
+                    nilai_unik, jumlah = np.unique(monte_carlo_bulat, return_counts=True)
+                    probabilitas_relatif = jumlah / jumlah_simulasi
+
+                    # Visualisasi dan Metrik
+                    st.subheader("Visualisasi dan Metrik")
+                    plt.figure(figsize=(10, 6))
+                    plt.hist(hasil_monte_carlo, bins=30, color='blue', alpha=0.7)
+                    plt.title("Hasil Simulasi Monte Carlo")
+                    plt.xlabel(dependent_variable)
+                    plt.ylabel("Frekuensi")
+                    st.pyplot(plt)
+
+                    st.write(f"Rata-rata hasil simulasi: {np.mean(hasil_monte_carlo):.2f}")
+                    st.write(f"Standar deviasi hasil simulasi: {np.std(hasil_monte_carlo):.2f}")
+                    st.write(f"R-Squared dari model regresi: {r_squared:.2f}")
+                    st.write(f"Value at Risk (VaR) pada level {tingkat_kepercayaan}%: {var:.2f}")
+
+                st.subheader("Langkah 6: Nilai Prediksi dari Waktu ke Waktu")
+                # Gabungkan data historis dan data prediksi untuk Random Forest
+                tahun_historis = df[year_column].values
+                tahun_prediksi = tahun_mendatang.flatten()[:len(hasil_monte_carlo)]  # Sesuaikan panjang hasil Monte Carlo
+                semua_tahun = np.concatenate([tahun_historis, tahun_prediksi])
+
+                y = np.concatenate([df[dependent_variable].values, hasil_monte_carlo[:len(tahun_prediksi)]])  # Sesuaikan panjang
+                X = semua_tahun.reshape(-1, 1)  # Gunakan tahun sebagai fitur
+
+                # Bagi data
+                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+                # Latih Random Forest Regressor
+                model_rf = RandomForestRegressor(n_estimators=100, random_state=42)
+                model_rf.fit(X_train, y_train)
+
+                # Buat prediksi
+                prediksi = model_rf.predict(X)
+
+                # Hitung MSE
+                mse = mean_squared_error(y_test, model_rf.predict(X_test))
+                st.write(f"Mean Squared Error: {mse:.2f}")
+
+                # Summary Plot Data Historis dan Prediksi
+                plt.figure(figsize=(12, 6))
+                plt.plot(tahun_historis, df[dependent_variable].values, label="Data Historis", color="blue")
+                plt.plot(tahun_prediksi, hasil_monte_carlo[:len(tahun_prediksi)], label="Prediksi Monte Carlo", color="orange", linestyle="--")
+                plt.plot(semua_tahun, prediksi, label="Prediksi Random Forest", color="green")
+                plt.xlabel("Tahun")
+                plt.ylabel(dependent_variable)
+                plt.title("Nilai Prediksi dari Waktu ke Waktu")
+                plt.legend()
+                st.pyplot(plt)
+
+                summary_plot = {
+                    "tahun_historis": tahun_historis.tolist(),
+                    "data_historis": df[dependent_variable].values.tolist(),
+                    "tahun_prediksi": tahun_prediksi.tolist(),
+                    "monte_carlo": hasil_monte_carlo[:len(tahun_prediksi)],
+                    "prediksi_rf": prediksi.tolist()
+                }
+
+                # Gabungkan data historis dan prediksi untuk gabungan_df
+                gabungan_df = pd.DataFrame({
+                    'Year': semua_tahun,
+                    'Value': np.concatenate([df[dependent_variable].values, prediksi[len(tahun_historis):]])
+                })
+
+                # Simpan data ke session state
+                st.session_state['gabungan_df'] = gabungan_df
+                st.session_state['summary_monte_carlo'] = {
+                    "r_squared": r_squared,
+                    "mean": np.mean(hasil_monte_carlo),
+                    "std_dev": np.std(hasil_monte_carlo),
+                    "VaR": var
+                }
+                st.session_state['summary_plot'] = summary_plot
+
+               
+                # Tampilkan Summary Plot
+                data_summary = {
+                    "Kategori": ["Data Historis", "Monte Carlo", "Random Forest"],
+                    "Rata-Rata": [
+                        np.mean(df[dependent_variable].values),
+                        np.mean(hasil_monte_carlo[:len(tahun_prediksi)]),
+                        np.mean(prediksi[len(tahun_historis):])
+                    ],
+                    "Standar Deviasi": [
+                        np.std(df[dependent_variable].values),
+                        np.std(hasil_monte_carlo[:len(tahun_prediksi)]),
+                        np.std(prediksi[len(tahun_historis):])
+                    ],
+                    "Nilai Minimum": [
+                        np.min(df[dependent_variable].values),
+                        np.min(hasil_monte_carlo[:len(tahun_prediksi)]),
+                        np.min(prediksi[len(tahun_historis):])
+                    ],
+                    "Nilai Maksimum": [
+                        np.max(df[dependent_variable].values),
+                        np.max(hasil_monte_carlo[:len(tahun_prediksi)]),
+                        np.max(prediksi[len(tahun_historis):])
+                    ]
+                }
+                data_summary_df = pd.DataFrame(data_summary)
+                st.subheader("Summary: Data Historis dan Prediksi")
+                st.table(data_summary_df)
+
+                # Evaluasi Keuangan
+                # Evaluasi Keuangan
+                st.subheader("7. Evaluasi Keuangan: IRR, NPV, dan Payback Period")
+
+                # Ambil nilai initial investment dan currency dari session state
+                initial_investment = st.session_state['investment_data']['initial_investment']
+                currency = st.session_state['investment_data']['currency']
+                discount_rate = 0.1  # Tingkat diskonto default (10%)
+                cash_flows = summary_plot['monte_carlo']  # Gunakan prediksi Monte Carlo untuk cash flow
+
+                # Perhitungan NPV
+                st.write("### Net Present Value (NPV)")
+                st.write("**Rumus:**")
+                st.latex(r"NPV = \sum_{t=1}^{n} \frac{CF_t}{(1 + r)^t} - C_0")
+                st.write("**Komponen dan Nilai:**")
+                st.write(f"- Modal Awal \(C_0\): {initial_investment:.2f} {currency}")
+                st.write(f"- Tingkat Diskonto \(r\): {discount_rate:.2%}")
+                st.write(f"- Cash Flows \(CF_t\): {cash_flows}")
+
+                npv = npf.npv(discount_rate, [-initial_investment] + cash_flows)
+                st.write(f"**Hasil NPV:** {npv:.2f} {currency}")
+                if npv > 0:
+                    st.success("Proyek ini menguntungkan berdasarkan perhitungan NPV.")
+                else:
+                    st.warning("Proyek ini tidak menguntungkan berdasarkan perhitungan NPV.")
+
+                # Perhitungan IRR
+                st.write("### Internal Rate of Return (IRR)")
+                st.write("**Rumus:**")
+                st.latex(r"NPV = \sum_{t=1}^{n} \frac{CF_t}{(1 + IRR)^t} - C_0 = 0")
+                st.write("**Komponen dan Nilai:**")
+                st.write(f"- Modal Awal \(C_0\): {initial_investment:.2f} {currency}")
+                st.write(f"- Cash Flows \(CF_t\): {cash_flows}")
+
+                irr = npf.irr([-initial_investment] + cash_flows)
+                st.write(f"**Hasil IRR:** {irr:.2%}")
+                if irr > discount_rate:
+                    st.success("Proyek ini layak karena IRR lebih besar dari tingkat diskonto.")
+                else:
+                    st.warning("Proyek ini tidak layak karena IRR lebih kecil dari tingkat diskonto.")
+
+                # Perhitungan Payback Period
+                st.write("### Payback Period")
+                st.write("**Definisi:** Waktu yang diperlukan hingga arus kas kumulatif \(\geq 0\).")
+                st.write("**Komponen dan Nilai:**")
+                st.write(f"- Modal Awal \(C_0\): {initial_investment:.2f} {currency}")
+                st.write(f"- Cash Flows \(CF_t\): {cash_flows}")
+
+                cumulative_cash_flow = np.cumsum([-initial_investment] + cash_flows)
+                payback_period = next((i for i, cf in enumerate(cumulative_cash_flow) if cf >= 0), None)
+
+                if payback_period is not None:
+                    st.write(f"**Hasil Payback Period:** {payback_period} tahun")
+                    if payback_period <= len(cash_flows):
+                        st.success("Proyek ini layak karena Payback Period tercapai dalam durasi prediksi.")
+                    else:
+                        st.warning("Proyek ini tidak layak karena Payback Period terlalu panjang.")
+                else:
+                    st.warning("Payback Period tidak tercapai dalam durasi prediksi.")
+
+                # Rekomendasi
+                st.write("### Rekomendasi")
+                if npv > 0 and irr > discount_rate and payback_period is not None and payback_period <= len(cash_flows):
+                    st.success("Proyek ini direkomendasikan untuk dijalankan berdasarkan evaluasi keuangan.")
+                else:
+                    st.warning("Proyek ini tidak direkomendasikan untuk dijalankan berdasarkan evaluasi keuangan.")
