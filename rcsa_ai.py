@@ -28,39 +28,55 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Image
 openai.api_key = st.secrets["openai_api_key"]
 
 
+import streamlit as st
+
+# ========== Tambahkan CSS Kustom ==========
 st.markdown("""
 <style>
+/* Tombol Umum */
 div.stButton > button {
-    background-color: #FF4B4B; /* Warna mencolok, misalnya merah terang */
-    color: white; /* Warna teks putih agar kontras */
-    font-size: 16px; /* Ukuran font lebih besar */
-    font-weight: bold; /* Membuat teks tebal */
-    padding: 10px 20px; /* Padding untuk memperbesar tombol */
-    border-radius: 8px; /* Membuat tombol lebih membulat */
-    border: none; /* Menghapus border */
-    transition: 0.3s; /* Animasi perubahan warna */
+    background-color: #FF4B4B;
+    color: white;
+    font-size: 16px;
+    font-weight: bold;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: none;
+    transition: 0.3s;
 }
 div.stButton > button:hover {
-    background-color: #D62828; /* Warna lebih gelap saat hover */
+    background-color: #D62828;
     color: white;
+}
+
+/* Ukuran font dan layout global */
+body {
+    font-size: 20px;
+}
+h1 {
+    font-size: 36px;
+}
+h2 {
+    font-size: 30px;
+}
+h3 {
+    font-size: 24px;
+}
+p {
+    font-size: 20px;
+}
+.stDataFrame table, .stTable, .stText {
+    width: 100% !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
-def rcsa_function():
-    print("Fitur RCSA dijalankan.")
-    # Tambahkan logika RCSA di sini
-
-# Tambahkan ini untuk mencegah eksekusi langsung saat file diimpor
-if __name__ == "__main__":
-    rcsa_function()
-    
+# ========== Fungsi Utama ==========
 def main():
     st.title("Risk and Control Self-Assessment (RCSA)")
     st.write("This is the RCSA module.")
-    # Tambahkan logika RCSA Anda di sini
+    # Tambahkan logika RCSA lengkap Anda di sini
 
-# Menambahkan CSS kustom untuk mengubah ukuran font dan lebar tampilan
 st.markdown("""
     <style>
     body {
