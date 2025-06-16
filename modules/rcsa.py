@@ -602,29 +602,93 @@ def update_monitoring_kpi():
     else:
         st.warning("Monitoring KPI belum tersedia. Klik tombol 'Update All Mitigation' untuk memperbarui.")
 
-def format_number_with_comma(number):
-    return "{:,.0f}".format(number)
+def save_to_excel(session_data, fig):
+    import pandas as pd
+    from io import BytesIO
 
+    def save_to_png():
+        img_buffer = BytesIO()
+        fig.savefig(img_buffer, format='png', dpi=150)
+        img_buffer.seek(0)
+        return img_buffer
+
+    img_buffer = save_to_png()
+    output = BytesIO()
+
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        # Sheet 1: Rekap Proyek
+        rekap_df = pd.DataFrame({
+            "Kategori": [
+                "Deskripsi Proyek",
+                "Tujuan Proyek",
+                "Stakeholders",
+                "Tanggal Mulai",
+                "Tanggal Selesai",
+                "Anggaran",
+                "Limit Risiko"
+            ],
+            "Detail": [
+                session_data.get("project_description", "N/A"),
+                session_data.get("project_goal", "N/A"),
+                session_data.get("stakeholders", "N/A"),
+                session_data.get("start_date", "N/A"),
+                session_data.get("end_date", "N/A"),
+                f"Rp {session_data.get('budget', 0):,.2f}",
+                f"Rp {session_data.get('limit_risk', 0):,.2f}"
+            ]
+        })
+        rekap_df.to_excel(writer, sheet_name='Rekap Project', index=False)
+
+        # Sheet 2: Risk Inherent
+        risk_inherent = session_data.get("Tabel Inherent", [])
+        pd.DataFrame(risk_inherent).to_excel(writer, sheet_name='Risk Inherent', index=False)
+
+        # Sheet 3: All Mitigation
+        all_mitigation = session_data.get("update_all_mitigation", [])
+        pd.DataFrame(all_mitigation).to_excel(writer, sheet_name='All Mitigation', index=False)
+
+        # Sheet 4: Monitoring KPI
+        monitoring_kpi = session_data.get("update_monitoring_kpi", [])
+        pd.DataFrame(monitoring_kpi).to_excel(writer, sheet_name='Monitoring KPI', index=False)
+
+        # Sheet 5: Risk Matrix Image
+        workbook = writer.book
+        worksheet = workbook.add_worksheet("Risk Matrix Image")
+        writer.sheets["Risk Matrix Image"] = worksheet
+        worksheet.insert_image("B2", "risk_matrix.png", {'image_data': img_buffer})
+
+    output.seek(0)
+    return output
 def main():
-    st.title("🧠 RCSA AI - Risk & Control Self-Assessment")
+   
+    setup_environment()
+    setup_streamlit_styles()
 
-    # 🔹 Input Informasi Proyek
-    st.header("1. Informasi Proyek")
     project_description, project_goal, stakeholders, start_date, end_date, input_budget, input_limit_risiko = get_project_inputs()
-
-    # 🔹 Proses Anggaran dan Limit Risiko
     clean_budget, clean_limit_risiko, formatted_budget, formatted_limit_risiko = process_and_validate_budget(input_budget, input_limit_risiko)
 
-    # 🔹 Tombol Simpan
-    if st.button("💾 Simpan Informasi Proyek"):
+    if st.button('Proses'):
         save_project_data(project_description, project_goal, stakeholders, start_date, end_date, clean_budget, clean_limit_risiko)
 
-    # 🔹 Rekap Proyek
     display_project_recap()
 
-if __name__ == "__main__":
-    main()
+    if st.button('Dapatkan Saran Risiko'):
+        suggestion = get_risk_suggestions(project_description, project_goal, stakeholders, start_date, end_date, formatted_budget, formatted_limit_risiko)
+        st.session_state.gpt_response = suggestion
+        st.success("Saran risiko berhasil diperoleh!")
 
+    edit_and_confirm_risks()            # risiko ditampilkan di halaman utama (editable + confirm)
+    identify_and_calculate_risks()      # identifikasi risiko
+    display_risk_matrix()               # matriks risiko
+    edit_and_confirm_mitigations()      # mitigasi (editable + confirm di layar utama)
+    update_monitoring_kpi()             # monitoring KPI
+
+    st.title("Save Session Data to Excel")
+    if st.button("Save to Excel with Risk Matrix Image"):
+        import matplotlib.pyplot as plt
+        fig = plt.gcf()
+        excel_file = save_to_excel(st.session_state, fig)
+        st.download_button(label="Download Excel", data=excel_file, file_name="session_data_with_risk_matrix.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 if __name__ == "__main__":
     main()
