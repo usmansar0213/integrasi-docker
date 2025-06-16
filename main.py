@@ -146,7 +146,7 @@ integrasi_modules = {"🧩 Modul Integrasi Data": "data_integrasi"}
 mrtools_modules = {
     "Chat Bot RISMA": "chatbot_risma",
     "Risk Modeling Monte Carlo": "risk_modeling_montecarlo",
-    "RCSA AI": "rcsa_ai",
+    "RCSA AI": "rcsa",
     "Feasibility Study": "feasibility_study",
     "Stress Testing": "stress_testing",
     "Altman Z-Score": "altmanz_score",
