@@ -606,7 +606,6 @@ def format_number_with_comma(number):
     return "{:,.0f}".format(number)
 
 def main():
-    st.set_page_config(page_title="RCSA AI", layout="wide")
     st.title("🧠 RCSA AI - Risk & Control Self-Assessment")
 
     # 🔹 Input Informasi Proyek
