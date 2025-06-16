@@ -144,7 +144,7 @@ monitoring_modules = {
 
 integrasi_modules = {"🧩 Modul Integrasi Data": "data_integrasi"}
 mrtools_modules = {
-    "Chat Bot VIA": "chatbot_via",
+    "Chat Bot RISMA": "chatbot_risma",
     "Risk Modeling Monte Carlo": "risk_modeling_montecarlo",
     "RCSA AI": "rcsa_ai",
     "Feasibility Study": "feasibility_study",
