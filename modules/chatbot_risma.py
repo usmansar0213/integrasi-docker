@@ -28,7 +28,7 @@ def display_title():
             '<div style="display: flex; flex-direction: column; justify-content: center;">',
             unsafe_allow_html=True
         )
-        st.markdown("<h1 style='font-size: 40px; font-weight: bold; color: #333;'>Chat Bot VIA</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='font-size: 40px; font-weight: bold; color: inherit;'>Chat Bot RISMA</h1>", unsafe_allow_html=True)
         st.markdown("""
             <p style='font-size: 18px; color: #666;'>VIA adalah asisten virtual pintar yang dirancang untuk menjawab pertanyaan seputar tema Pelindo dan tema umum. 
             Membantu Anda dalam berbagai analisis risiko dan pengambilan keputusan berbasis data. Dengan menggunakan teknologi 
