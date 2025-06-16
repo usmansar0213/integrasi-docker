@@ -278,7 +278,7 @@ def main():
             with st.expander("8️⃣ Fault Tree Analysis"):
                 render_modul_button("Fault Tree Analysis", key_prefix="btn_mrtools")
 
-        selected_module_name = st.session_state.get("modul_aktif")
+            selected_module_name = st.session_state.get("modul_aktif")
             if selected_module_name:
                 module_filename = all_module_map.get(selected_module_name)
             
