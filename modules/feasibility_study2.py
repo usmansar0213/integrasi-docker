@@ -627,3 +627,5 @@ def main():
     
         output.seek(0)
         return output
+if __name__ == "__main__":
+    main()
