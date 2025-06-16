@@ -278,34 +278,26 @@ def main():
             with st.expander("8️⃣ Fault Tree Analysis"):
                 render_modul_button("Fault Tree Analysis", key_prefix="btn_mrtools")
 
-            selected_module_name = st.session_state.get("modul_aktif")
-            if selected_module_name:
-                module_filename = all_module_map.get(selected_module_name)
-            
-                # ✅ DEBUG: tampilkan info pemetaan modul
-                st.write("🧪 [DEBUG] Modul aktif dipilih:", selected_module_name)
-                st.write("🧪 [DEBUG] Nama file modul yang dicari:", module_filename)
-            
-                if module_filename:
-                    try:
-                        st.write(f"🧪 [DEBUG] Akan mengimport: modules.{module_filename}")
-                        selected_module = importlib.import_module(f"modules.{module_filename}")
-            
-                        main_func = getattr(selected_module, "main", None)
-                        if callable(main_func):
-                            main_func()
-                        else:
-                            st.error(f"❌ Modul '{selected_module_name}' tidak memiliki fungsi main().")
-                    except ModuleNotFoundError:
-                        st.error(f"❌ Modul '{selected_module_name}' tidak ditemukan!")
-                    except Exception as e:
-                        st.error(f"⚠️ Terjadi kesalahan saat memuat modul '{selected_module_name}': {e}")
-                        st.text(traceback.format_exc())
-                else:
-                    st.info("ℹ️ Modul ini belum tersedia.")
+        selected_module_name = st.session_state.get("modul_aktif")
+        if selected_module_name:
+            module_filename = all_module_map.get(selected_module_name)
+            if module_filename:
+                try:
+                    selected_module = importlib.import_module(f"modules.{module_filename}")
+                    main_func = getattr(selected_module, "main", None)
+                    if callable(main_func):
+                        main_func()
+                    else:
+                        st.error(f"❌ Modul '{selected_module_name}' tidak memiliki fungsi main().")
+                except ModuleNotFoundError:
+                    st.error(f"❌ Modul '{selected_module_name}' tidak ditemukan!")
+                except Exception as e:
+                    st.error(f"⚠️ Terjadi kesalahan saat memuat modul '{selected_module_name}': {e}")
+                    st.text(traceback.format_exc())
             else:
-                col1, col2 = st.columns([2, 8])
-
+                st.info("ℹ️ Modul ini belum tersedia.")
+        else:
+            col1, col2 = st.columns([2, 8])
             via_icon_path = os.path.join("static", "via_icon.jpg")
             with col1:
                 if os.path.exists(via_icon_path):
