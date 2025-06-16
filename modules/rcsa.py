@@ -660,13 +660,18 @@ def save_to_excel(session_data, fig):
     output.seek(0)
     return output
 def main():
-   
-    setup_streamlit_styles()
 
+    st.title("🧠 RCSA AI - Risk & Control Self-Assessment")
+
+    # 🔹 Input Informasi Proyek
+    st.header("1. Informasi Proyek")
     project_description, project_goal, stakeholders, start_date, end_date, input_budget, input_limit_risiko = get_project_inputs()
+
+    # 🔹 Proses Anggaran dan Limit Risiko
     clean_budget, clean_limit_risiko, formatted_budget, formatted_limit_risiko = process_and_validate_budget(input_budget, input_limit_risiko)
 
-    if st.button('Proses'):
+    # 🔹 Tombol Simpan
+    if st.button("💾 Simpan Informasi Proyek"):
         save_project_data(project_description, project_goal, stakeholders, start_date, end_date, clean_budget, clean_limit_risiko)
 
     display_project_recap()
