@@ -615,27 +615,28 @@ def buat_keterangan_risiko(row, jenis="dampak"):
 def main():
     st.title("📅 Monitoring & Evaluasi Risiko")
 
-    # Tambahkan uploader (opsional)
-    uploaded_file = st.file_uploader("Silahkan unggah 3 File: risk_based_budgeting, Profil_Risiko")
-    uploaded_file = st.file_uploader("Silahkan unggah file risk-based budgeting & profil risiko")
-if uploaded_file:
-    xls = pd.ExcelFile(uploaded_file)
-    for sheet in xls.sheet_names:
-        df = xls.parse(sheet)
-        st.session_state[f"copy_{sheet.lower().replace(' ', '_')}"] = df
+    # 📥 Uploader untuk file Excel
+    uploaded_file = st.file_uploader("Silahkan unggah file risk-based budgeting, profil risiko, dan anggaran mitigasi", type=["xlsx"])
 
-    if "Anggaran PIC" in xls.sheet_names:
-        df_pic = xls.parse("Anggaran PIC")
-        st.session_state["copy_tabel_anggaran_pic"] = df_pic
+    if uploaded_file:
+        xls = pd.ExcelFile(uploaded_file)
 
-    st.success("✅ File berhasil dimuat ke session state.")
-    
+        for sheet in xls.sheet_names:
+            df = xls.parse(sheet)
+            nama_session = sheet.lower().replace(" ", "_")
+            st.session_state[f"copy_{nama_session}"] = df
 
+            # Tambahan penting: simpan sheet Anggaran PIC ke key yang dibutuhkan untuk fungsi mitigasi
+            if sheet.strip().lower() == "anggaran pic":
+                st.session_state["copy_tabel_anggaran_pic"] = df
+
+        st.success("✅ File berhasil dimuat ke session state.")
+
+    # 🗓️ Bulan dan tahun pelaporan
     bulan_saat_ini = datetime.now().month
     tahun_saat_ini = datetime.now().year
     nama_bulan = month_name[bulan_saat_ini]
     st.subheader(f"Bulan Pelaporan: {nama_bulan} {tahun_saat_ini}")
-
 
     # ✅ Inisialisasi key penting jika belum ada
     if "copy_tabel_risiko_gabungan" not in st.session_state and "copy_tabel_gabungan" in st.session_state:
@@ -676,17 +677,17 @@ if uploaded_file:
         if kolom not in df_final.columns:
             df_final[kolom] = ""
 
-    # Simpan hasil akhir ke session
+    # Simpan hasil akhir ke session state
     st.session_state["copy_risiko_update_terpilih"] = df_final[kolom_final]
 
     # 🔥 Tampilkan heatmap
     tampilkan_matriks_risiko(df_final)
-    
-    # 📝 Keterangan Skala Dampak dan Skala Probabilitas (dalam bentuk tabel)
+
+    # 📝 Keterangan dampak dan probabilitas
     with st.expander("📝 Tabel Keterangan Skala Dampak & Probabilitas"):
-        if df_final is not None and not df_final.empty:
+        if not df_final.empty:
             df_keterangan = pd.DataFrame({
-                "No": df_final["No"],
+                "No": df_final.get("No", ""),
                 "Kode Risiko": df_final["Kode Risiko"],
                 "Peristiwa Risiko": df_final["Peristiwa Risiko"],
                 "Keterangan Skala Dampak": df_final["Keterangan Skala Dampak"],
@@ -696,21 +697,17 @@ if uploaded_file:
         else:
             st.info("ℹ️ Data belum tersedia untuk menampilkan keterangan.")
 
-
-    # 🔍 Rekap + Profil + Editor
+    # 🧾 Rekap dan editor akhir
     st.markdown("## 🧾 Rekap Data Final")
     with st.expander("🔍 Lihat/Edit Rekap Gabungan Monitoring"):
         edited_df = st.data_editor(df_final, use_container_width=True, num_rows="dynamic")
 
-    # Tombol update session
     if st.button("📥 Update Rekap Gabungan"):
         st.session_state["copy_risiko_update_terpilih"] = edited_df
         st.success("✅ Data Rekap Gabungan diperbarui ke session.")
 
-    # Tombol simpan
     if st.button("💾 Simpan Semua Data Monitoring"):
         simpan_data_monitoring()
 
-    # Tombol integrasi
     if st.button("🔗 Integrasi", key="integrasi_button_rekap"):
         simpan_integrasi_monitoring(edited_df)
