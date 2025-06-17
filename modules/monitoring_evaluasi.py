@@ -209,7 +209,6 @@ def tampilkan_residual_q1():
     else:
         st.info("ℹ️ Data residual risiko Q1 belum tersedia di session state.")
 def tampilkan_gabungan_update_risiko():
-    # Ambil semua data dari session state
     df_risiko = st.session_state.get("copy_tabel_risiko_gabungan", pd.DataFrame())
     df_mitigasi = st.session_state.get("copy_update_program_mitigasi", pd.DataFrame())
     df_kri = st.session_state.get("copy_update_kri", pd.DataFrame())
@@ -223,7 +222,7 @@ def tampilkan_gabungan_update_risiko():
 
     df = df_risiko.copy()
 
-    # 🔄 MERGE DATA TAMBAHAN
+    # 🔄 Merge
     if not df_mitigasi.empty:
         kolom_mitigasi = ["Jenis Program Dalam RKAP", "PIC", "Progress Program Mitigasi (%)", "Keterangan"]
         df = df.merge(df_mitigasi[["Kode Risiko"] + kolom_mitigasi].drop_duplicates(), on="Kode Risiko", how="left")
@@ -263,15 +262,15 @@ def tampilkan_gabungan_update_risiko():
         ("Divisi", "Divisi"),
         ("Departemen", "Departemen"),
     ]
-
     for idx, (kolom, kunci) in enumerate(kolom_info):
         if kolom not in df.columns:
             df.insert(idx, kolom, info_dict.get(kunci, ""))
 
-    # 🧮 Perhitungan
+    # Hitung bulan & kuartal
     bulan_saat_ini = datetime.now().month
     kuartal = (bulan_saat_ini - 1) // 3 + 1
 
+    # Konversi numerik
     df_summary["Nilai"] = pd.to_numeric(df_summary["Nilai"], errors="coerce")
     df_summary["Pencapaian Saat Ini"] = pd.to_numeric(df_summary["Pencapaian Saat Ini"], errors="coerce")
 
@@ -285,11 +284,17 @@ def tampilkan_gabungan_update_risiko():
     df["Nilai Biaya"] = nilai_biaya
     df["Pencapaian Biaya"] = pencapaian_biaya
 
+    # % Kinerja
     persentase = (pencapaian_pendapatan / nilai_pendapatan) * 100 if nilai_pendapatan else None
     persentase_float = persentase if persentase is not None else 0
     df["% Kinerja Keuangan"] = f"{persentase_float:.2f}%" if persentase is not None else "-"
 
-    df["Nilai Dampak"] = pd.to_numeric(df.get("Nilai Dampak"), errors="coerce")
+    # Dampak residual
+    if isinstance(df.get("Nilai Dampak"), pd.Series):
+        df["Nilai Dampak"] = pd.to_numeric(df["Nilai Dampak"], errors="coerce")
+    else:
+        df["Nilai Dampak"] = 0
+
     df["Dampak Residual Saat Ini"] = df["Nilai Dampak"] * ((100 - persentase_float) / 100)
     df["Dampak Residual Saat Ini"] = df["Dampak Residual Saat Ini"].apply(
         lambda x: f"{int(round(x)):,}" if pd.notnull(x) else "-"
@@ -305,12 +310,19 @@ def tampilkan_gabungan_update_risiko():
         lambda x: "Kurang" if x < batas_pendapatan_bulanan else "Cukup"
     )
 
+    # Progress mitigasi
+    progress_col = df.get("Progress Program Mitigasi (%)")
+    if isinstance(progress_col, pd.Series):
+        df["Progress Program Mitigasi (%)"] = pd.to_numeric(progress_col, errors="coerce").fillna(0)
+    else:
+        df["Progress Program Mitigasi (%)"] = 0
+
     target_progress = (100 / 12) * bulan_saat_ini
-    df["Progress Program Mitigasi (%)"] = pd.to_numeric(df.get("Progress Program Mitigasi (%)", 0), errors="coerce").fillna(0)
     df["Pengelolaan Mitigasi"] = df["Progress Program Mitigasi (%)"].apply(
         lambda x: "Cukup" if x >= target_progress else "Kurang"
     )
 
+    # Probabilitas
     mapping_prob = {
         1: "Skala Probabilitas Q1",
         2: "Skala Q2_Probabilitas",
@@ -330,6 +342,7 @@ def tampilkan_gabungan_update_risiko():
 
     df["Skala Probabilitas Saat Ini"] = df.apply(hitung_probabilitas_saat_ini, axis=1)
 
+    # Dampak
     mapping_dampak = {
         1: "Skala Dampak Q1",
         2: "Skala Q2_Dampak",
@@ -349,6 +362,7 @@ def tampilkan_gabungan_update_risiko():
 
     df["Skala Dampak Saat Ini"] = df.apply(hitung_skala_dampak_saat_ini, axis=1)
 
+    # Risiko BUMN
     df["Skala Dampak BUMN"] = df["Skala Dampak Saat Ini"]
     df["Skala Probabilitas BUMN"] = df["Skala Probabilitas Saat Ini"]
     df["Skala Risiko BUMN"] = pd.to_numeric(df["Skala Dampak BUMN"], errors="coerce") * pd.to_numeric(df["Skala Probabilitas BUMN"], errors="coerce")
@@ -372,6 +386,9 @@ def tampilkan_gabungan_update_risiko():
     df["Justifikasi Skala Probabilitas"] = df.apply(justifikasi_prob, axis=1)
     df["Keterangan Skala Dampak"] = df.apply(lambda row: buat_keterangan_risiko(row, jenis="dampak"), axis=1)
     df["Keterangan Skala Probabilitas"] = df.apply(lambda row: buat_keterangan_risiko(row, jenis="prob"), axis=1)
+
+    return df
+
 
  
     return df
