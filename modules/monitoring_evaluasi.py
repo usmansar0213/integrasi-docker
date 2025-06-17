@@ -243,27 +243,32 @@ def tampilkan_gabungan_update_risiko():
         ]
         df = df.merge(df_residual[kolom_residual].drop_duplicates(), on="Kode Risiko", how="left")
 
-    # 📊 FINANSIAL & PERHITUNGAN DAMPAK
     if df_summary.empty or "Kategori" not in df_summary.columns:
         st.warning("⚠️ Data summary RBB belum lengkap atau kosong.")
         return pd.DataFrame()
-    
-    # Tambahkan informasi perusahaan ke kolom awal
+
+    # 🏢 Tambahkan informasi perusahaan jika belum ada
     df_info = st.session_state.get("copy_informasi_perusahaan", pd.DataFrame())
     info_dict = {}
     if isinstance(df_info, pd.DataFrame) and not df_info.empty:
         for _, row in df_info.iterrows():
             info_dict[row["Data yang dibutuhkan"]] = row["Input Pengguna"]
 
-    df.insert(0, "Kode Perusahaan", info_dict.get("Kode Perusahaan", ""))
-    df.insert(1, "Nama Perusahaan", info_dict.get("Nama Perusahaan", ""))
-    df.insert(2, "Alamat", info_dict.get("Alamat", ""))
-    df.insert(3, "Jenis Bisnis", info_dict.get("Jenis Bisnis", ""))
-    df.insert(4, "Direktorat", info_dict.get("Direktorat", ""))
-    df.insert(5, "Divisi", info_dict.get("Divisi", ""))
-    df.insert(6, "Departemen", info_dict.get("Departemen", ""))
-    
-    # Hitung bulan dan kuartal pelaporan
+    kolom_info = [
+        ("Kode Perusahaan", "Kode Perusahaan"),
+        ("Nama Perusahaan", "Nama Perusahaan"),
+        ("Alamat", "Alamat"),
+        ("Jenis Bisnis", "Jenis Bisnis"),
+        ("Direktorat", "Direktorat"),
+        ("Divisi", "Divisi"),
+        ("Departemen", "Departemen"),
+    ]
+
+    for idx, (kolom, kunci) in enumerate(kolom_info):
+        if kolom not in df.columns:
+            df.insert(idx, kolom, info_dict.get(kunci, ""))
+
+    # 🧮 Perhitungan
     bulan_saat_ini = datetime.now().month
     kuartal = (bulan_saat_ini - 1) // 3 + 1
 
@@ -280,19 +285,16 @@ def tampilkan_gabungan_update_risiko():
     df["Nilai Biaya"] = nilai_biaya
     df["Pencapaian Biaya"] = pencapaian_biaya
 
-    # % Kinerja Keuangan
     persentase = (pencapaian_pendapatan / nilai_pendapatan) * 100 if nilai_pendapatan else None
     persentase_float = persentase if persentase is not None else 0
     df["% Kinerja Keuangan"] = f"{persentase_float:.2f}%" if persentase is not None else "-"
 
-    # Dampak Residual Saat Ini
     df["Nilai Dampak"] = pd.to_numeric(df.get("Nilai Dampak"), errors="coerce")
     df["Dampak Residual Saat Ini"] = df["Nilai Dampak"] * ((100 - persentase_float) / 100)
     df["Dampak Residual Saat Ini"] = df["Dampak Residual Saat Ini"].apply(
         lambda x: f"{int(round(x)):,}" if pd.notnull(x) else "-"
     )
 
-    # Evaluasi Status Kinerja Biaya & Pendapatan
     batas_biaya_bulanan = (nilai_biaya / 12) * bulan_saat_ini if nilai_biaya else 0
     batas_pendapatan_bulanan = (nilai_pendapatan / 12) * bulan_saat_ini if nilai_pendapatan else 0
 
@@ -303,14 +305,12 @@ def tampilkan_gabungan_update_risiko():
         lambda x: "Kurang" if x < batas_pendapatan_bulanan else "Cukup"
     )
 
-    # Pengelolaan Mitigasi
     target_progress = (100 / 12) * bulan_saat_ini
     df["Progress Program Mitigasi (%)"] = pd.to_numeric(df.get("Progress Program Mitigasi (%)", 0), errors="coerce").fillna(0)
     df["Pengelolaan Mitigasi"] = df["Progress Program Mitigasi (%)"].apply(
         lambda x: "Cukup" if x >= target_progress else "Kurang"
     )
 
-    # Hitung Skala Probabilitas Saat Ini
     mapping_prob = {
         1: "Skala Probabilitas Q1",
         2: "Skala Q2_Probabilitas",
@@ -330,7 +330,6 @@ def tampilkan_gabungan_update_risiko():
 
     df["Skala Probabilitas Saat Ini"] = df.apply(hitung_probabilitas_saat_ini, axis=1)
 
-    # Hitung Skala Dampak Saat Ini
     mapping_dampak = {
         1: "Skala Dampak Q1",
         2: "Skala Q2_Dampak",
@@ -339,7 +338,7 @@ def tampilkan_gabungan_update_risiko():
     }
     kolom_dampak = mapping_dampak.get(kuartal, "Skala Dampak Q1")
     df[kolom_dampak] = pd.to_numeric(df.get(kolom_dampak), errors="coerce")
-    
+
     def hitung_skala_dampak_saat_ini(row):
         nilai = row.get(kolom_dampak)
         if pd.isna(nilai):
@@ -350,7 +349,6 @@ def tampilkan_gabungan_update_risiko():
 
     df["Skala Dampak Saat Ini"] = df.apply(hitung_skala_dampak_saat_ini, axis=1)
 
-    # Tambahan untuk BUMN
     df["Skala Dampak BUMN"] = df["Skala Dampak Saat Ini"]
     df["Skala Probabilitas BUMN"] = df["Skala Probabilitas Saat Ini"]
     df["Skala Risiko BUMN"] = pd.to_numeric(df["Skala Dampak BUMN"], errors="coerce") * pd.to_numeric(df["Skala Probabilitas BUMN"], errors="coerce")
@@ -375,6 +373,7 @@ def tampilkan_gabungan_update_risiko():
     df["Keterangan Skala Dampak"] = df.apply(lambda row: buat_keterangan_risiko(row, jenis="dampak"), axis=1)
     df["Keterangan Skala Probabilitas"] = df.apply(lambda row: buat_keterangan_risiko(row, jenis="prob"), axis=1)
 
+ 
     return df
 
 def tampilkan_matriks_risiko(df, title="Heatmap Matriks Risiko Monitoring", x_label="Skala Dampak", y_label="Skala Probabilitas"):
