@@ -617,7 +617,7 @@ def main():
 
     # 📥 Multi-file uploader
     uploaded_files = st.file_uploader(
-        "📥 Silakan unggah file Excel (boleh lebih dari 1): Perlakuan Risiko, Profil Risiko, RBB, dll",
+        "📥 Silakan unggah 3 file: Perlakuan Risiko, Profil Risiko,risk_based_budgeting",
         type=["xlsx"],
         accept_multiple_files=True
     )
