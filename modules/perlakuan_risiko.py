@@ -19,9 +19,9 @@ BTN_LOAD_LABEL = "📂 Muat Data dari File"
 openai.api_key = st.secrets["openai_api_key"]
 
 def upload_semua_file_risiko():
-    with st.expander("📥 Upload Semua File Risiko (Strategi, Inherent, Mitigasi)", expanded=True):
+    with st.expander("📥 Silahkan Upload file Strategi Risiko, Inherent, Mitigasi)", expanded=True):
         uploaded_files = st.file_uploader(
-            "Unggah Maksimal 3 File Excel (Strategi Risiko, Inherent Risk, Hasil Mitigasi)", 
+            "Unggah Maksimal 3 File Excel (Strategi_Risiko, Inherent_Dampak)", 
             type=["xlsx"], 
             accept_multiple_files=True, 
             key="upload_semua"
