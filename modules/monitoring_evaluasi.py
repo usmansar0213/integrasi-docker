@@ -814,23 +814,7 @@ def generate_tabel_data_integrasi():
 def main():
     st.title("📅 Monitoring & Evaluasi Risiko")
 
-    st.subheader("🗓️ Pilih Bulan & Tahun Pelaporan")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        bulan_list = list(month_name)[1:]  # ['January', ..., 'December']
-        bulan_default = datetime.now().month - 1
-        bulan_pilihan = st.selectbox("Bulan Pelaporan", bulan_list, index=bulan_default, key="pilihan_bulan")
-
-    with col2:
-        tahun_saat_ini = datetime.now().year
-        tahun_range = list(range(tahun_saat_ini - 5, tahun_saat_ini + 1))
-        tahun_pilihan = st.selectbox("Tahun Pelaporan", tahun_range[::-1], key="pilihan_tahun")
-
-    # Simpan ke session_state
-    st.session_state["bulan_pelaporan"] = bulan_pilihan
-    st.session_state["tahun_pelaporan"] = tahun_pilihan
+   
 
 
     # 📥 Upload file monitoring risiko
@@ -859,6 +843,23 @@ def main():
     st.session_state.setdefault("copy_summary_rbb", pd.DataFrame())
     st.session_state.setdefault("copy_tabel_residual_q1", pd.DataFrame())
 
+    st.subheader("🗓️ Pilih Bulan & Tahun Pelaporan")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        bulan_list = list(month_name)[1:]  # ['January', ..., 'December']
+        bulan_default = datetime.now().month - 1
+        bulan_pilihan = st.selectbox("Bulan Pelaporan", bulan_list, index=bulan_default, key="pilihan_bulan")
+
+    with col2:
+        tahun_saat_ini = datetime.now().year
+        tahun_range = list(range(tahun_saat_ini - 5, tahun_saat_ini + 1))
+        tahun_pilihan = st.selectbox("Tahun Pelaporan", tahun_range[::-1], key="pilihan_tahun")
+
+    # Simpan ke session_state
+    st.session_state["bulan_pelaporan"] = bulan_pilihan
+    st.session_state["tahun_pelaporan"] = tahun_pilihan
     # 🔧 UI: Update risiko
     tampilkan_update_program_mitigasi()
     tampilkan_update_kri()
