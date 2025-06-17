@@ -466,7 +466,7 @@ def main():
     st.title("📌 Profil Risiko")
 
     # 🔵 Satu uploader untuk semua
-    uploaded_file = st.file_uploader("📂 Upload File Sasaran Strategis atau Profil Risiko (.xlsx)", type=["xlsx"], key="file_upload")
+    uploaded_file = st.file_uploader("📂 Upload File Sasaran Strategis Bisnis", type=["xlsx"], key="file_upload")
 
     if uploaded_file:
         load_uploaded_file_flexible(uploaded_file)
