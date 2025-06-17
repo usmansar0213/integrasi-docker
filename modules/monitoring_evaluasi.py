@@ -209,189 +209,57 @@ def tampilkan_residual_q1():
     else:
         st.info("ℹ️ Data residual risiko Q1 belum tersedia di session state.")
 def tampilkan_gabungan_update_risiko():
+    import streamlit as st
+    import pandas as pd
+
+    # Cek ketersediaan data dari session state
     df_risiko = st.session_state.get("copy_tabel_risiko_gabungan", pd.DataFrame())
     df_mitigasi = st.session_state.get("copy_update_program_mitigasi", pd.DataFrame())
     df_kri = st.session_state.get("copy_update_kri", pd.DataFrame())
-    df_kri_lengkap = st.session_state.get("copy_key_risk_indicator", pd.DataFrame())
-    df_residual = st.session_state.get("copy_tabel_residual_q1", pd.DataFrame())
     df_summary = st.session_state.get("copy_summary_rbb", pd.DataFrame())
+    df_info = st.session_state.get("copy_informasi_perusahaan", pd.DataFrame())
+    df_residual_dampak = st.session_state.get("copy_residual_dampak", pd.DataFrame())
+    df_residual_prob = st.session_state.get("copy_residual_prob", pd.DataFrame())
+
+    # Debugging Awal
+    with st.expander("🧪 Debug: Pemeriksaan Data Session State", expanded=True):
+        st.markdown(
+            f"""
+            {'✅' if not df_risiko.empty else '❌'} 🧾 Risiko Gabungan / Monitoring {'tersedia' if not df_risiko.empty else 'tidak tersedia atau kosong'} (`copy_tabel_risiko_gabungan`)
+
+            {'✅' if not df_mitigasi.empty else '❌'} 🛠️ Update Program Mitigasi {'tersedia' if not df_mitigasi.empty else 'tidak tersedia'} (`copy_update_program_mitigasi`) – {len(df_mitigasi)} baris
+
+            {'✅' if not df_kri.empty else '❌'} 📈 Update KRI {'tersedia' if not df_kri.empty else 'tidak tersedia'} (`copy_update_kri`) – {len(df_kri)} baris
+
+            {'✅' if not df_summary.empty else '❌'} 📊 Summary RBB {'tersedia' if not df_summary.empty else 'tidak tersedia'} (`copy_summary_rbb`) – {len(df_summary)} baris
+
+            {'✅' if not df_info.empty else '❌'} 🏢 Informasi Perusahaan {'tersedia' if not df_info.empty else 'tidak tersedia'} (`copy_informasi_perusahaan`) – {len(df_info)} baris
+
+            {'✅' if not df_residual_dampak.empty and not df_residual_prob.empty else '❌'} 📉 Residual Dampak & Probabilitas {'tersedia' if not df_residual_dampak.empty and not df_residual_prob.empty else 'tidak tersedia'} (`copy_residual_dampak`, `copy_residual_prob`)
+            """
+        )
 
     if df_risiko.empty:
         st.warning("⚠️ Data risiko gabungan belum tersedia.")
         return pd.DataFrame()
 
-    df = df_risiko.copy()
-
-    # 🔄 Merge
-    if not df_mitigasi.empty:
-        kolom_mitigasi = ["Jenis Program Dalam RKAP", "PIC", "Progress Program Mitigasi (%)", "Keterangan"]
-        df = df.merge(df_mitigasi[["Kode Risiko"] + kolom_mitigasi].drop_duplicates(), on="Kode Risiko", how="left")
-
-    if not df_kri.empty:
-        kolom_kri = ["Kode Risiko", "KRI Saat Ini", "Pengelolaan KRI"]
-        df = df.merge(df_kri[kolom_kri].drop_duplicates(), on="Kode Risiko", how="left")
-
-    if not df_kri_lengkap.empty:
-        kolom_kri_lengkap = ["Kode Risiko", "Key Risk Indicators (KRI)", "Unit KRI", "KRI Aman", "KRI Hati-Hati", "KRI Bahaya"]
-        df = df.merge(df_kri_lengkap[kolom_kri_lengkap].drop_duplicates(), on="Kode Risiko", how="left")
-
-    if not df_residual.empty:
-        kolom_residual = [
-            "Kode Risiko", "Skala Probabilitas Q1", "Skala Q2_Probabilitas", "Skala Q3_Probabilitas", "Skala Q4_Probabilitas",
-            "Skala Dampak Q1", "Skala Q2_Dampak", "Skala Q3_Dampak", "Skala Q4_Dampak"
-        ]
-        df = df.merge(df_residual[kolom_residual].drop_duplicates(), on="Kode Risiko", how="left")
-
-    if df_summary.empty or "Kategori" not in df_summary.columns:
-        st.warning("⚠️ Data summary RBB belum lengkap atau kosong.")
+    if df_mitigasi.empty or df_kri.empty or df_summary.empty or df_residual_dampak.empty or df_residual_prob.empty:
+        st.warning("⚠️ Mohon lengkapi semua data (mitigasi, KRI, RBB, residual) untuk menghitung residual saat ini.")
         return pd.DataFrame()
 
-    # 🏢 Tambahkan informasi perusahaan jika belum ada
-    df_info = st.session_state.get("copy_informasi_perusahaan", pd.DataFrame())
-    info_dict = {}
-    if isinstance(df_info, pd.DataFrame) and not df_info.empty:
-        for _, row in df_info.iterrows():
-            info_dict[row["Data yang dibutuhkan"]] = row["Input Pengguna"]
-
-    kolom_info = [
-        ("Kode Perusahaan", "Kode Perusahaan"),
-        ("Nama Perusahaan", "Nama Perusahaan"),
-        ("Alamat", "Alamat"),
-        ("Jenis Bisnis", "Jenis Bisnis"),
-        ("Direktorat", "Direktorat"),
-        ("Divisi", "Divisi"),
-        ("Departemen", "Departemen"),
-    ]
-    for idx, (kolom, kunci) in enumerate(kolom_info):
-        if kolom not in df.columns:
-            df.insert(idx, kolom, info_dict.get(kunci, ""))
-
-    # Hitung bulan & kuartal
-    bulan_saat_ini = datetime.now().month
-    kuartal = (bulan_saat_ini - 1) // 3 + 1
-
-    # Konversi numerik
-    df_summary["Nilai"] = pd.to_numeric(df_summary["Nilai"], errors="coerce")
-    df_summary["Pencapaian Saat Ini"] = pd.to_numeric(df_summary["Pencapaian Saat Ini"], errors="coerce")
-
-    nilai_pendapatan = df_summary.loc[df_summary["Kategori"] == "Total Proyeksi Pendapatan", "Nilai"].sum()
-    pencapaian_pendapatan = df_summary.loc[df_summary["Kategori"] == "Total Proyeksi Pendapatan", "Pencapaian Saat Ini"].sum()
-    nilai_biaya = df_summary.loc[df_summary["Kategori"] == "Total Biaya", "Nilai"].sum()
-    pencapaian_biaya = df_summary.loc[df_summary["Kategori"] == "Total Biaya", "Pencapaian Saat Ini"].sum()
-
-    df["Nilai Pendapatan"] = nilai_pendapatan
-    df["Pencapaian Pendapatan"] = pencapaian_pendapatan
-    df["Nilai Biaya"] = nilai_biaya
-    df["Pencapaian Biaya"] = pencapaian_biaya
-
-    # % Kinerja
-    persentase = (pencapaian_pendapatan / nilai_pendapatan) * 100 if nilai_pendapatan else None
-    persentase_float = persentase if persentase is not None else 0
-    df["% Kinerja Keuangan"] = f"{persentase_float:.2f}%" if persentase is not None else "-"
-
-    # Dampak residual
-    if isinstance(df.get("Nilai Dampak"), pd.Series):
-        df["Nilai Dampak"] = pd.to_numeric(df["Nilai Dampak"], errors="coerce")
-    else:
-        df["Nilai Dampak"] = 0
-
-    df["Dampak Residual Saat Ini"] = df["Nilai Dampak"] * ((100 - persentase_float) / 100)
-    df["Dampak Residual Saat Ini"] = df["Dampak Residual Saat Ini"].apply(
-        lambda x: f"{int(round(x)):,}" if pd.notnull(x) else "-"
+    # Hitung residual saat ini berdasarkan kuartal aktif
+    df_residual = hitung_residual_saat_ini(
+        df_residual_dampak,
+        df_residual_prob,
+        df_kri,
+        df_mitigasi,
+        df_summary
     )
+    st.session_state["copy_tabel_residual_q1"] = df_residual  # Optional: simpan hasil
 
-    batas_biaya_bulanan = (nilai_biaya / 12) * bulan_saat_ini if nilai_biaya else 0
-    batas_pendapatan_bulanan = (nilai_pendapatan / 12) * bulan_saat_ini if nilai_pendapatan else 0
-
-    df["Status Kinerja Biaya"] = df["Pencapaian Biaya"].apply(
-        lambda x: "Kurang" if x > batas_biaya_bulanan else "Cukup"
-    )
-    df["Status Kinerja Pendapatan"] = df["Pencapaian Pendapatan"].apply(
-        lambda x: "Kurang" if x < batas_pendapatan_bulanan else "Cukup"
-    )
-
-    # Progress mitigasi
-    progress_col = df.get("Progress Program Mitigasi (%)")
-    if isinstance(progress_col, pd.Series):
-        df["Progress Program Mitigasi (%)"] = pd.to_numeric(progress_col, errors="coerce").fillna(0)
-    else:
-        df["Progress Program Mitigasi (%)"] = 0
-
-    target_progress = (100 / 12) * bulan_saat_ini
-    df["Pengelolaan Mitigasi"] = df["Progress Program Mitigasi (%)"].apply(
-        lambda x: "Cukup" if x >= target_progress else "Kurang"
-    )
-
-    # Probabilitas
-    mapping_prob = {
-        1: "Skala Probabilitas Q1",
-        2: "Skala Q2_Probabilitas",
-        3: "Skala Q3_Probabilitas",
-        4: "Skala Q4_Probabilitas"
-    }
-    kolom_prob = mapping_prob.get(kuartal, "Skala Probabilitas Q1")
-    df[kolom_prob] = pd.to_numeric(df.get(kolom_prob), errors="coerce")
-
-    def hitung_probabilitas_saat_ini(row):
-        nilai = row.get(kolom_prob)
-        if pd.isna(nilai):
-            return "-"
-        if row.get("Pengelolaan KRI") == "Kurang" or row.get("Pengelolaan Mitigasi") == "Kurang":
-            return min(nilai + 1, 5)
-        return nilai
-
-    df["Skala Probabilitas Saat Ini"] = df.apply(hitung_probabilitas_saat_ini, axis=1)
-
-    # Dampak
-    mapping_dampak = {
-        1: "Skala Dampak Q1",
-        2: "Skala Q2_Dampak",
-        3: "Skala Q3_Dampak",
-        4: "Skala Q4_Dampak"
-    }
-    kolom_dampak = mapping_dampak.get(kuartal, "Skala Dampak Q1")
-    df[kolom_dampak] = pd.to_numeric(df.get(kolom_dampak), errors="coerce")
-
-    def hitung_skala_dampak_saat_ini(row):
-        nilai = row.get(kolom_dampak)
-        if pd.isna(nilai):
-            return "-"
-        if row.get("Status Kinerja Biaya") == "Kurang" or row.get("Status Kinerja Pendapatan") == "Kurang":
-            return min(nilai + 1, 5)
-        return nilai
-
-    df["Skala Dampak Saat Ini"] = df.apply(hitung_skala_dampak_saat_ini, axis=1)
-
-    # Risiko BUMN
-    df["Skala Dampak BUMN"] = df["Skala Dampak Saat Ini"]
-    df["Skala Probabilitas BUMN"] = df["Skala Probabilitas Saat Ini"]
-    df["Skala Risiko BUMN"] = pd.to_numeric(df["Skala Dampak BUMN"], errors="coerce") * pd.to_numeric(df["Skala Probabilitas BUMN"], errors="coerce")
-
-    def tentukan_level_risiko(nilai):
-        if pd.isna(nilai):
-            return "-"
-        if nilai <= 5:
-            return "Rendah"
-        elif nilai <= 12:
-            return "Menengah"
-        else:
-            return "Tinggi"
-
-    df["Level Risiko BUMN"] = df["Skala Risiko BUMN"].apply(tentukan_level_risiko)
-
-    df["Bulan Pelaporan"] = month_name[datetime.now().month]
-    df["Tahun Pelaporan"] = datetime.now().year
-
-    df["Justifikasi Skala Dampak"] = df.apply(justifikasi_dampak, axis=1)
-    df["Justifikasi Skala Probabilitas"] = df.apply(justifikasi_prob, axis=1)
-    df["Keterangan Skala Dampak"] = df.apply(lambda row: buat_keterangan_risiko(row, jenis="dampak"), axis=1)
-    df["Keterangan Skala Probabilitas"] = df.apply(lambda row: buat_keterangan_risiko(row, jenis="prob"), axis=1)
-
-    return df
-
-
- 
-    return df
+    # Gabungkan residual ke risiko
+    df_final = pd.merge(df_risiko, df_residual[["Kode Risiko", "Skala Probabilitas Saat Ini", "Skala Dampak Saat Ini"]], on="Kode Risiko", how="left")
+    return df_final
 
 def tampilkan_matriks_risiko(df, title="Heatmap Matriks Risiko Monitoring", x_label="Skala Dampak", y_label="Skala Probabilitas"):
     st.subheader(title)
@@ -456,9 +324,6 @@ def tampilkan_matriks_risiko(df, title="Heatmap Matriks Risiko Monitoring", x_la
 
     return df
 
-
-
-    return df
 def simpan_data_monitoring():
     import os
 
@@ -657,6 +522,73 @@ def tampilkan_debug_monitoring():
         else:
             st.success("✅ Semua kolom wajib tersedia di risiko gabungan.")
         st.dataframe(df_risiko.head(), use_container_width=True)
+def hitung_residual_saat_ini(
+    df_residual_dampak: pd.DataFrame,
+    df_residual_prob: pd.DataFrame,
+    df_kri: pd.DataFrame,
+    df_mitigasi: pd.DataFrame,
+    df_summary_rbb: pd.DataFrame
+) -> pd.DataFrame:
+    df = pd.merge(df_residual_dampak, df_residual_prob, on="Kode Risiko", how="outer")
+
+    bulan = datetime.now().month
+    kuartal = (bulan - 1) // 3 + 1
+
+    kolom_prob = {
+        1: "Skala Probabilitas Q1",
+        2: "Skala Q2_Probabilitas",
+        3: "Skala Q3_Probabilitas",
+        4: "Skala Q4_Probabilitas"
+    }[kuartal]
+    kolom_dampak = {
+        1: "Skala Dampak Q1",
+        2: "Skala Q2_Dampak",
+        3: "Skala Q3_Dampak",
+        4: "Skala Q4_Dampak"
+    }[kuartal]
+
+    df[kolom_prob] = pd.to_numeric(df[kolom_prob], errors="coerce")
+    df[kolom_dampak] = pd.to_numeric(df[kolom_dampak], errors="coerce")
+
+    kri_map = df_kri.set_index("Kode Risiko")[["Pengelolaan KRI"]]
+    mitigasi_map = df_mitigasi.set_index("Kode Risiko")[["Progress Program Mitigasi (%)"]]
+    df = df.merge(kri_map, left_on="Kode Risiko", right_index=True, how="left")
+    df = df.merge(mitigasi_map, left_on="Kode Risiko", right_index=True, how="left")
+
+    target_progress = (100 / 12) * bulan
+    df["Pengelolaan Mitigasi"] = df["Progress Program Mitigasi (%)"].apply(
+        lambda x: "Kurang" if pd.isna(x) or x < target_progress else "Cukup"
+    )
+
+    df_summary_rbb["Nilai"] = pd.to_numeric(df_summary_rbb["Nilai"], errors="coerce")
+    df_summary_rbb["Pencapaian Saat Ini"] = pd.to_numeric(df_summary_rbb["Pencapaian Saat Ini"], errors="coerce")
+    total_biaya = df_summary_rbb[df_summary_rbb["Kategori"] == "Total Biaya"]["Pencapaian Saat Ini"].sum()
+    total_biaya_limit = df_summary_rbb[df_summary_rbb["Kategori"] == "Total Biaya"]["Nilai"].sum() / 12 * bulan
+    total_pendapatan = df_summary_rbb[df_summary_rbb["Kategori"] == "Total Proyeksi Pendapatan"]["Pencapaian Saat Ini"].sum()
+    total_pendapatan_target = df_summary_rbb[df_summary_rbb["Kategori"] == "Total Proyeksi Pendapatan"]["Nilai"].sum() / 12 * bulan
+
+    status_biaya = "Kurang" if total_biaya > total_biaya_limit else "Cukup"
+    status_pendapatan = "Kurang" if total_pendapatan < total_pendapatan_target else "Cukup"
+
+    def hitung_prob(row):
+        nilai = row.get(kolom_prob)
+        if pd.isna(nilai):
+            return "-"
+        if row.get("Pengelolaan KRI") == "Kurang" or row.get("Pengelolaan Mitigasi") == "Kurang":
+            return min(nilai + 1, 5)
+        return nilai
+
+    def hitung_dampak(row):
+        nilai = row.get(kolom_dampak)
+        if pd.isna(nilai):
+            return "-"
+        if status_biaya == "Kurang" or status_pendapatan == "Kurang":
+            return min(nilai + 1, 5)
+        return nilai
+
+    df["Skala Probabilitas Saat Ini"] = df.apply(hitung_prob, axis=1)
+    df["Skala Dampak Saat Ini"] = df.apply(hitung_dampak, axis=1)
+    return df
 
 def main():
     st.title("📅 Monitoring & Evaluasi Risiko")
