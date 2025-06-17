@@ -5,62 +5,64 @@ from datetime import datetime
 import io
 
 def upload_file_gabungan_fleksibel():
+    st.markdown("### 📥 Upload File Gabungan Risiko")
     uploaded_files = st.file_uploader(
-        "📥 Unggah File Gabungan (.xlsx) – bisa strategi, inherent, dan/atau residual (hasil ekspor)",
+        "Unggah file (.xlsx) yang berisi Strategi, Inherent, dan/atau Residual Risiko",
         type=["xlsx"],
         accept_multiple_files=True,
         key="upload_file_gabungan_fleksibel"
     )
 
-    if not uploaded_files:
-        return
+    if uploaded_files:
+        st.info("✅ File berhasil diunggah. Klik tombol **📤 Proses Data** untuk membaca isi file.")
 
-    for file in uploaded_files:
-        try:
-            xls = pd.ExcelFile(file)
-            sheet_names = [s.lower() for s in xls.sheet_names]
+        if st.button("📤 Proses Data"):
+            for file in uploaded_files:
+                try:
+                    xls = pd.ExcelFile(file)
+                    sheet_names = [s.lower() for s in xls.sheet_names]
 
-            # === Deteksi dan simpan strategi
-            if any("strategi" in file.name.lower() or "aset" in s for s in sheet_names):
-                for sheet in xls.sheet_names:
-                    df_sheet = pd.read_excel(xls, sheet_name=sheet)
-                    baris_limit = df_sheet[df_sheet.iloc[:, 0].astype(str).str.lower().str.contains("limit risiko", na=False)]
-                    if not baris_limit.empty:
-                        nilai_limit = pd.to_numeric(baris_limit.iloc[0, 1], errors='coerce')
-                        st.session_state["copy_limit_risiko"] = nilai_limit
-                        st.success(f"✅ Limit Risiko berhasil dimuat dari: {file.name}")
+                    # === Deteksi dan simpan strategi
+                    if any("strategi" in file.name.lower() or "aset" in s for s in sheet_names):
+                        for sheet in xls.sheet_names:
+                            df_sheet = pd.read_excel(xls, sheet_name=sheet)
+                            baris_limit = df_sheet[df_sheet.iloc[:, 0].astype(str).str.lower().str.contains("limit risiko", na=False)]
+                            if not baris_limit.empty:
+                                nilai_limit = pd.to_numeric(baris_limit.iloc[0, 1], errors='coerce')
+                                st.session_state["copy_limit_risiko"] = nilai_limit
+                                st.success(f"✅ Limit Risiko berhasil dimuat dari: {file.name}")
 
-            # === Inherent Risiko
-            if "tabel kuantitatif" in sheet_names:
-                st.session_state["copy_Risiko_Kuantitatif"] = pd.read_excel(xls, sheet_name="Tabel Kuantitatif")
-                st.success(f"✅ Risiko Kuantitatif dimuat dari: {file.name}")
-            if "tabel kualitatif" in sheet_names:
-                st.session_state["copy_Risiko_Kualitatif"] = pd.read_excel(xls, sheet_name="Tabel Kualitatif")
-                st.success(f"✅ Risiko Kualitatif dimuat dari: {file.name}")
+                    # === Inherent Risiko
+                    if "tabel kuantitatif" in sheet_names:
+                        st.session_state["copy_Risiko_Kuantitatif"] = pd.read_excel(xls, sheet_name="Tabel Kuantitatif")
+                        st.success(f"✅ Risiko Kuantitatif dimuat dari: {file.name}")
+                    if "tabel kualitatif" in sheet_names:
+                        st.session_state["copy_Risiko_Kualitatif"] = pd.read_excel(xls, sheet_name="Tabel Kualitatif")
+                        st.success(f"✅ Risiko Kualitatif dimuat dari: {file.name}")
 
-            # === Residual Risiko (jika hasil ekspor sebelumnya)
-            if "residual_dampak" in sheet_names:
-                st.session_state["copy_tabel_residual_dampak"] = pd.read_excel(xls, sheet_name="residual_dampak")
-            if "residual_prob" in sheet_names:
-                st.session_state["copy_tabel_residual_probabilitas"] = pd.read_excel(xls, sheet_name="residual_prob")
-            if "residual_eksposur" in sheet_names:
-                st.session_state["copy_tabel_residual_eksposur"] = pd.read_excel(xls, sheet_name="residual_eksposur")
+                    # === Residual Risiko (jika hasil ekspor sebelumnya)
+                    if "residual_dampak" in sheet_names:
+                        st.session_state["copy_tabel_residual_dampak"] = pd.read_excel(xls, sheet_name="residual_dampak")
+                    if "residual_prob" in sheet_names:
+                        st.session_state["copy_tabel_residual_probabilitas"] = pd.read_excel(xls, sheet_name="residual_prob")
+                    if "residual_eksposur" in sheet_names:
+                        st.session_state["copy_tabel_residual_eksposur"] = pd.read_excel(xls, sheet_name="residual_eksposur")
 
-            # Hitung total Q4 otomatis jika data tersedia
-            if all(k in st.session_state for k in ["copy_tabel_residual_dampak", "copy_tabel_residual_probabilitas", "copy_tabel_residual_eksposur"]):
-                df_eksposur = st.session_state["copy_tabel_residual_eksposur"]
-                if 'Dampak Anggaran' in df_eksposur.columns and any(col.startswith("Nilai Q4") for col in df_eksposur.columns):
-                    q4_col = [col for col in df_eksposur.columns if col.startswith("Nilai Q4")][0]
-                    total_df = df_eksposur[['Dampak Anggaran', q4_col]].copy()
-                    total_df[q4_col] = pd.to_numeric(total_df[q4_col], errors='coerce')
-                    total_q4_dict = total_df.groupby('Dampak Anggaran')[q4_col].sum().to_dict()
-                    st.session_state["copy_residual_biaya"] = total_q4_dict.get("Biaya", 0.0)
-                    st.session_state["copy_residual_pendapatan"] = total_q4_dict.get("Pendapatan", 0.0)
-                    st.success(f"✅ File residual dimuat lengkap dari: {file.name}")
-
-        except Exception as e:
-            st.error(f"❌ Gagal memproses file {file.name}: {e}")
-
+                    # Hitung total Q4 otomatis jika lengkap
+                    if all(k in st.session_state for k in ["copy_tabel_residual_dampak", "copy_tabel_residual_probabilitas", "copy_tabel_residual_eksposur"]):
+                        df_eksposur = st.session_state["copy_tabel_residual_eksposur"]
+                        if 'Dampak Anggaran' in df_eksposur.columns and any(col.startswith("Nilai Q4") for col in df_eksposur.columns):
+                            q4_col = [col for col in df_eksposur.columns if col.startswith("Nilai Q4")][0]
+                            total_df = df_eksposur[['Dampak Anggaran', q4_col]].copy()
+                            total_df[q4_col] = pd.to_numeric(total_df[q4_col], errors='coerce')
+                            total_q4_dict = total_df.groupby('Dampak Anggaran')[q4_col].sum().to_dict()
+                            st.session_state["copy_residual_biaya"] = total_q4_dict.get("Biaya", 0.0)
+                            st.session_state["copy_residual_pendapatan"] = total_q4_dict.get("Pendapatan", 0.0)
+                            st.success(f"✅ File residual dimuat lengkap dari: {file.name}")
+                except Exception as e:
+                    st.error(f"❌ Gagal memproses file {file.name}: {e}")
+    else:
+        st.info("📁 Belum ada file yang diunggah.")
 
 # Tabel Residual Probabilitas
 def buat_tabel_residual_probabilitas(df_gabungan):
