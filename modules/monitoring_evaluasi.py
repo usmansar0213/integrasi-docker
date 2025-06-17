@@ -663,7 +663,7 @@ def main():
 
     # 📥 Multi-file uploader
     uploaded_files = st.file_uploader(
-        "📥 Silakan unggah 3 file: Perlakuan Risiko, Profil Risiko,risk_based_budgeting",
+        "📥 Silakan unggah 3 file: Perlakuan Risiko, Profil Risiko, Risk-Based Budgeting",
         type=["xlsx"],
         accept_multiple_files=True
     )
@@ -678,10 +678,8 @@ def main():
 
                 if "anggaran pic" in sheet.lower():
                     st.session_state["copy_tabel_anggaran_pic"] = df
-
                 elif "risiko gabungan" in sheet.lower() or "monitoring" in sheet.lower():
                     st.session_state["copy_tabel_risiko_gabungan"] = df
-
                 elif "informasi perusahaan" in sheet.lower():
                     st.session_state["copy_informasi_perusahaan"] = df
 
@@ -711,6 +709,12 @@ def main():
 
     # 🔁 Gabungan dan analisis
     df_final = tampilkan_gabungan_update_risiko()
+
+    # 🔧 Debug ditampilkan SELALU, meskipun df_final kosong
+    with st.expander("🔧 Debug Data Monitoring (opsional)"):
+        tampilkan_debug_monitoring()
+
+    # ❌ Jika data masih kosong, hentikan proses analisis
     if df_final is None or df_final.empty:
         st.warning("⚠️ Data gabungan tidak tersedia atau kosong.")
         return
@@ -721,7 +725,7 @@ def main():
     # 🔥 Visualisasi heatmap
     tampilkan_matriks_risiko(df_final)
 
-    # 📝 Keterangan
+    # 📝 Keterangan risiko
     with st.expander("📝 Tabel Keterangan Skala Dampak & Probabilitas"):
         if not df_final.empty:
             df_keterangan = pd.DataFrame({
@@ -733,8 +737,6 @@ def main():
             st.dataframe(df_keterangan, use_container_width=True)
         else:
             st.info("ℹ️ Data belum tersedia.")
-    with st.expander("🔧 Debug Data Monitoring (opsional)"):
-        tampilkan_debug_monitoring()
 
     # 🧾 Rekap akhir & ekspor
     st.markdown("## 🧾 Rekap Data Final")
@@ -753,4 +755,3 @@ def main():
 
     # 🏢 Tambahkan editor profil perusahaan dan rekap gabungan
     tampilkan_rekap_gabungan_update_risiko_dengan_profil_interaktif(df_final)
-    
