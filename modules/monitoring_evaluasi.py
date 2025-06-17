@@ -633,10 +633,7 @@ def gabungkan_file_excel_dari_uploader(uploaded_files):
 
     return df_gabungan
 
-import streamlit as st
-import pandas as pd
-from datetime import datetime
-from modules.utils import hitung_residual_saat_ini, tampilkan_gabungan_update_risiko, gabungkan_file_excel_dari_uploader
+
 
 def main():
     st.title("📅 Monitoring & Evaluasi Risiko")
