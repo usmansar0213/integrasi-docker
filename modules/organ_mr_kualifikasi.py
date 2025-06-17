@@ -1,67 +1,26 @@
-from modules.utils import get_user_file
 import streamlit as st 
 import pandas as pd
 import os
-import datetime
-from dotenv import load_dotenv
-from datetime import datetime
-import io
 
-def upload_data_kualifikasi_saja():
-    st.subheader("📥 Upload File Kualifikasi & Profil Perusahaan")
-
-    col1, col2 = st.columns(2)
-
-    # Uploader untuk data kualifikasi organ
-    with col1:
-        uploaded_kualifikasi = st.file_uploader(
-            "📊 File Data Kualifikasi Organ (.xlsx)",
-            type=["xlsx"],
-            key="upload_kualifikasi"
-        )
-        if uploaded_kualifikasi:
-            try:
-                df = pd.read_excel(uploaded_kualifikasi)
-                st.session_state["data_kualifikasi"] = df.copy()
-                st.success(f"✅ Data kualifikasi dimuat dari: {uploaded_kualifikasi.name}")
-            except Exception as e:
-                st.error(f"❌ Gagal membaca file kualifikasi: {e}")
-
-    # Uploader untuk profil perusahaan
-    with col2:
-        uploaded_profil = st.file_uploader(
-            "🏢 File Profil Perusahaan (.xlsx)",
-            type=["xlsx"],
-            key="upload_profil_perusahaan"
-        )
-        if uploaded_profil:
-            try:
-                df_profil = pd.read_excel(uploaded_profil, sheet_name=None)
-                # Coba cari sheet yang namanya mengandung "informasi"
-                sheet_nama = next((s for s in df_profil if "informasi" in s.lower()), None)
-                if sheet_nama:
-                    df_info = df_profil[sheet_nama]
-                    st.session_state["copy_informasi_perusahaan"] = df_info.copy()
-                    st.success(f"✅ Data profil perusahaan dimuat dari sheet: {sheet_nama}")
-                else:
-                    st.warning("⚠️ Sheet dengan nama mengandung 'informasi' tidak ditemukan.")
-            except Exception as e:
-                st.error(f"❌ Gagal membaca file profil perusahaan: {e}")
+# ------------------------ Konfigurasi File ------------------------
+FOLDER = "C:/saved"
+FILE_PATH = os.path.join(FOLDER, "organ_mr_kualifikasi.xlsx")
+FILE_ORGAN = os.path.join(FOLDER, "daftar_organ_mr.xlsx")  # ✅ Tambahkan baris ini
 
 
+# ------------------------ Inisialisasi Data ------------------------
+if not os.path.exists(FOLDER):
+    os.makedirs(FOLDER)
 
-def log_debug(pesan: str, filename: str = "log.txt"):
-    """Mencatat pesan log dengan timestamp ke file log.txt"""
-    folder = os.getenv("DATA_FOLDER", "/app/saved")  # Atau default folder Anda
-    full_path = os.path.join(folder, filename)   
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+if os.path.exists(FILE_PATH):
+    df_laporan = pd.read_excel(FILE_PATH)
+else:
+    df_laporan = pd.DataFrame(columns=[
+        "Perusahaan", "Tahun Awal Penugasan", "Nama", "Jabatan", "Unit", "Organ Risiko",
+        "Pelatihan 1", "Jam 1", "Pelatihan 2", "Jam 2", "Total Jam", "Nama File Dokumen"
+    ])
 
-    try:
-        with open(full_path, "a") as f:
-            f.write(f"[{timestamp}] {pesan}\n")
-    except Exception as e:
-        st.warning(f"Gagal menulis log: {e}")
-
+# ------------------------ Fungsi Lookup Kualifikasi ------------------------
 def cari_kualifikasi_organ_pengelola(jenis_organ: str) -> str:
     jenis_organ = jenis_organ.strip().lower()
 
@@ -164,17 +123,12 @@ def cari_kualifikasi_organ_pengelola(jenis_organ: str) -> str:
 
 # ------------------------ UI Streamlit ------------------------
 
-def modul_kualifikasi_organ():
-    def on_select_organ():
-        st.session_state["show_regulasi_expander"] = True
+st.title("📘 Organ & Kualifikasi")
+st.markdown("Petunjuk berdasarkan *SK-3/DKU.MBU/05/2023* – Kementerian BUMN")
 
-    st.markdown("Petunjuk berdasarkan *SK-3/DKU.MBU/05/2023* – Kementerian BUMN")
-
-    if "show_regulasi_expander" not in st.session_state:
-        st.session_state["show_regulasi_expander"] = False
-
-    with st.expander("📘Organ Pengelola Risiko & Kualifikasi", expanded=st.session_state["show_regulasi_expander"]):
-        st.markdown("""
+# Tampilan informasi regulasi & tugas
+with st.expander("📘 Acuan Regulasi: Organ Pengelola Risiko", expanded=False):
+    st.markdown("""
 **SK-3/DKU.MBU/05/2023** adalah Petunjuk Teknis (Juknis) yang ditetapkan oleh **Deputi Keuangan dan Manajemen Risiko Kementerian BUMN** untuk mengatur **komposisi dan kualifikasi** Organ Pengelola Risiko di lingkungan BUMN dan Anak Perusahaan.
 
 ### 🧾 Dasar Hukum
@@ -206,23 +160,35 @@ def modul_kualifikasi_organ():
 > 📌 Setiap organ wajib memenuhi **kualifikasi pelatihan dan sertifikasi profesional** sesuai perannya.
 """)
 
-    pilihan = st.selectbox("🔍 Pilih Jenis Organ Pengelola Risiko:", [
-        "Dewan Komisaris",
-        "Direksi",
-        "Direktur Keuangan",
-        "Direktur Risiko",
-        "Unit Risiko",
-        "Komite Audit",
-        "Komite Pemantau Risiko",
-        "Komite Tata Kelola",
-        "SPI",
-        "Unit Pemilik Risiko"
-    ], key="organ_dipilih", on_change=on_select_organ)
+# Pilihan dan hasil kualifikasi
+pilihan = st.selectbox("🔍 Pilih Jenis Organ Pengelola Risiko:", [
+    "Dewan Komisaris",
+    "Direksi",
+    "Direktur Keuangan",
+    "Direktur Risiko",
+    "Unit Risiko",
+    "Komite Audit",
+    "Komite Pemantau Risiko",
+    "Komite Tata Kelola",
+    "SPI",
+    "Unit Pemilik Risiko"
+])
 
-    hasil = cari_kualifikasi_organ_pengelola(pilihan)
-    st.markdown(hasil)
+hasil = cari_kualifikasi_organ_pengelola(pilihan)
+st.markdown(hasil)
 
+def load_laporan_data():
+    if not os.path.exists(FOLDER):
+        os.makedirs(FOLDER)
+    if os.path.exists(FILE_PATH):
+        return pd.read_excel(FILE_PATH)
+    else:
+        return pd.DataFrame(columns=[
+            "Perusahaan", "Tahun Awal Penugasan", "Nama", "Jabatan", "Unit", "Organ Risiko"
+       
+        ])
 
+# 4. Fungsi simpan file (bukti upload)
 def simpan_file_bukti(file, perusahaan, nama, tahun):
     if file:
         filename = f"{perusahaan}_{nama}_{tahun}_{file.name}"
@@ -231,205 +197,124 @@ def simpan_file_bukti(file, perusahaan, nama, tahun):
             f.write(file.getbuffer())
         return filename
     return "-"
-    
-def simpan_kualifikasi_dengan_download():
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    folder_path = FOLDER  # Folder simpan global yang sudah diinisialisasi
-    judul = "Kualifikasi_organ_MR"
 
-    if not os.path.exists(folder_path):
-        os.makedirs(folder_path)
+if "temp_kualifikasi_organ" not in st.session_state:
+    st.session_state["temp_kualifikasi_organ"] = pd.DataFrame(columns=[
+        "Perusahaan", "Tahun Awal Penugasan", "Nama", "Jabatan", "Unit", "Organ Risiko"
+    ])
+def load_daftar_organ():
+    if os.path.exists(FILE_ORGAN):
+        return pd.read_excel(FILE_ORGAN)
+    else:
+        return pd.DataFrame(columns=[
+            "Perusahaan", "Tahun Awal Penugasan", "Nama", "Jabatan", "Unit", "Organ Risiko"
+        ])
 
-    filename = f"{judul}_{timestamp}.xlsx"
-    server_file_path = os.path.join(folder_path, filename)
-    output = io.BytesIO()
+def save_daftar_organ(df):
+    df.to_excel(FILE_ORGAN, index=False)
 
-    df = st.session_state.get("data_kualifikasi", pd.DataFrame())
+def modul_pendaftaran_organ():
+    st.subheader("📑 Data Organ Pengelola Risiko")
 
-    if df.empty:
-        st.warning("⚠️ Tidak ada data kualifikasi yang tersedia untuk disimpan.")
-        return
+    if "temp_kualifikasi_organ" not in st.session_state:
+        st.session_state["temp_kualifikasi_organ"] = pd.DataFrame(columns=[
+            "Perusahaan", "Tahun Awal Penugasan", "Nama", "Jabatan", "Unit", "Organ Risiko"
+        ])
 
-    with pd.ExcelWriter(server_file_path, engine="xlsxwriter") as writer_server, \
-         pd.ExcelWriter(output, engine="xlsxwriter") as writer_download:
-        df.to_excel(writer_server, sheet_name="Kualifikasi", index=False)
-        df.to_excel(writer_download, sheet_name="Kualifikasi", index=False)
+    df_temp = st.session_state["temp_kualifikasi_organ"]
 
-    output.seek(0)
+    with st.expander("📥 Form Pengisian Organ", expanded=False):
+        df_edit = st.data_editor(
+            df_temp,
+            num_rows="dynamic",
+            use_container_width=True,
+            key="editor_pendaftaran_organ"
+        )
 
-    st.success(f"✅ Data kualifikasi disimpan ke: `{server_file_path}`")
-    st.download_button(
-        label="⬇️ Unduh Data Kualifikasi",
-        data=output,
-        file_name=filename,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        if st.button("💾 Simpan Data"):
+            st.session_state["temp_kualifikasi_organ"] = df_edit.copy()
 
-def tampilkan_data_kualifikasi():
-    st.subheader("📑 Update Kualifikasi ")
-    df_kualifikasi = st.session_state.get("data_kualifikasi", pd.DataFrame())
+            df_lama = load_laporan_data()
+            df_final = pd.concat([df_lama, df_edit], ignore_index=True)
+            df_final.drop_duplicates(subset=["Perusahaan", "Tahun Awal Penugasan", "Nama"], inplace=True)
+            df_final.to_excel(FILE_PATH, index=False)
 
-    if df_kualifikasi.empty or "Nama" not in df_kualifikasi.columns:
-        st.info("📭 Belum ada data kualifikasi yang tersedia atau kolom 'Nama' tidak ditemukan.")
-        return
+            st.success("✅ Data berhasil disimpan.")
+            st.info(f"📂 File disimpan di: `{FILE_PATH}`")
 
-    opsi_nama = df_kualifikasi["Nama"].dropna().unique().tolist()
-    if not opsi_nama:
-        st.warning("⚠️ Kolom 'Nama' tersedia tapi tidak berisi data.")
-        return
+    # Tampilkan data lama
+    df_laporan = load_laporan_data()
+    with st.expander("📋 Data Organ Pengelola Risiko ", expanded=False):
+        st.dataframe(df_laporan, use_container_width=True)
 
-    nama_dipilih = st.selectbox("🧑 Pilih Nama", opsi_nama)
-    data_terpilih = df_kualifikasi[df_kualifikasi["Nama"] == nama_dipilih]
-    st.dataframe(data_terpilih, use_container_width=True)
+    # Tampilkan detail berdasarkan nama
+    tampilkan_data_kualifikasi(df_laporan)
 
-    perusahaan = data_terpilih["Perusahaan"].values[0]
-    tahun = data_terpilih["Tahun Awal Penugasan"].values[0]
-    jabatan = data_terpilih["Jabatan"].values[0]
-    unit = data_terpilih["Unit"].values[0]
-    organ = data_terpilih["Organ Risiko"].values[0]
+def tampilkan_data_kualifikasi(df_laporan: pd.DataFrame):
+    st.subheader("📑 Data Kualifikasi Organ_MR")
+    with st.expander("📄 Form Update Data Kualifikasi", expanded=False):
 
-    col1, col2 = st.columns(2)
-    with col1:
-        nama_pelatihan = st.text_input("📚 Nama Pelatihan / Sertifikasi")
-        jenis_pelatihan = st.selectbox("📌 Jenis", ["Pelatihan", "Sertifikasi"])
-    with col2:
-        jam = st.number_input("⏱️ Jumlah Jam", min_value=0, step=1)
-        bulan_tahun = st.text_input("📅 Bulan_Tahun Pelatihan", placeholder="Misal: Maret 2025")
+        if df_laporan.empty:
+            st.info("📭 Belum ada data yang tersimpan.")
+            return
 
-    bukti_dokumen = st.file_uploader("📎 Upload Bukti Dokumen", type=["pdf", "jpg", "png", "docx"])
-    nama_file = "-"
-    if bukti_dokumen:
-        nama_file = simpan_file_bukti(bukti_dokumen, perusahaan, nama_dipilih, tahun)
-        st.success(f"✅ Dokumen disimpan: {nama_file}")
+        opsi_nama = df_laporan["Nama"].unique().tolist()
+        nama_dipilih = st.selectbox("🧑 Pilih Nama", opsi_nama, key="lihat_detail_nama")
 
-    if st.button("➕ Tambahkan Data Kualifikasi"):
-        data_baru = {
-            "Perusahaan": perusahaan,
-            "Tahun Awal Penugasan": tahun,
-            "Nama": nama_dipilih,
-            "Jabatan": jabatan,
-            "Unit": unit,
-            "Organ Risiko": organ,
-            "Nama Pelatihan/Sertifikasi": nama_pelatihan,
-            "Jenis": jenis_pelatihan,
-            "Jam": jam,
-            "Bulan_Tahun Pelatihan": bulan_tahun,
-            "Nama File Dokumen": nama_file
-        }
+        data_terpilih = df_laporan[df_laporan["Nama"] == nama_dipilih]
 
-        st.session_state["data_kualifikasi"] = pd.concat([
-            df_kualifikasi,
-            pd.DataFrame([data_baru])
-        ], ignore_index=True)
-        st.success("✅ Data kualifikasi berhasil ditambahkan.")
-        st.markdown("#### 📋 Tabel Kualifikasi Terbaru")
-        st.dataframe(st.session_state["data_kualifikasi"], use_container_width=True)
+        if not data_terpilih.empty:
+            st.data_editor(data_terpilih.reset_index(drop=True), use_container_width=True, disabled=True)
 
-def simpan_semua_kualifikasi_dengan_download():
-    st.subheader("💾 Simpan & Unduh Semua Data Kualifikasi")
+            st.markdown("### 📝 Isian Data Kualifikasi Tambahan")
 
-    df_kualifikasi = st.session_state.get("data_kualifikasi", pd.DataFrame())
-    if df_kualifikasi.empty:
-        st.warning("⚠️ Tidak ada data kualifikasi yang tersedia.")
-        return
+            perusahaan = data_terpilih["Perusahaan"].values[0]
+            tahun = data_terpilih["Tahun Awal Penugasan"].values[0]
 
-    # 🔄 Data Organ Belum Penuhi Jam Minimum
-    grouped_min = df_kualifikasi.groupby(["Perusahaan", "Tahun Awal Penugasan", "Nama", "Jabatan", "Organ Risiko"])
-    df_summary_min = grouped_min["Jam"].sum().reset_index()
-    df_summary_min.rename(columns={"Jam": "Total Jam Pelatihan"}, inplace=True)
-    df_belum_penuhi = df_summary_min[df_summary_min["Total Jam Pelatihan"] < 10]
+            col1, col2 = st.columns(2)
+            with col1:
+                nama_pelatihan = st.text_input("📚 Nama Pelatihan / Sertifikasi")
+                jenis_pelatihan = st.selectbox("📌 Jenis", ["Pelatihan", "Sertifikasi"])
+            with col2:
+                jam = st.number_input("⏱️ Jumlah Jam", min_value=0, step=1, value=0)
+                bulan_tahun = st.text_input("📅 Bulan_Tahun Pelatihan", placeholder="Misal: Maret 2025")
 
-    # 🔄 Evaluasi Kepatuhan (copy dari fungsi `cek_kepatuhan_kualifikasi`)
-    kualifikasi_validasi = {
-        "dewan komisaris": {"min_jam": 20, "sertifikasi_wajib": 1},
-        "direksi": {"min_jam": 40, "sertifikasi_wajib": 1, "min_topik": 3},
-        "direktur keuangan": {"min_jam": 40, "sertifikasi_wajib": 1, "min_topik": 3},
-        "direktur risiko": {"min_jam": 40, "sertifikasi_wajib": 1, "min_topik": 3},
-        "unit risiko": {"min_jam": 60, "sertifikasi_wajib": 1, "sertifikasi_total": 3, "min_topik": 3},
-        "komite audit": {"min_jam": 20, "sertifikasi_wajib": 1},
-        "komite pemantau risiko": {"min_jam": 20, "sertifikasi_wajib": 1},
-        "komite tata kelola": {"min_jam": 20, "sertifikasi_wajib": 1},
-        "spi": {"kepala_jam": 40, "anggota_jam": 20, "sertifikasi_total": 3},
-        "unit pemilik risiko": {"min_jam": 10}
-    }
+            nama_file = "-"
+            bukti_dokumen = st.file_uploader("📎 Upload Bukti Dokumen", type=["pdf", "jpg", "png", "docx"])
+            if bukti_dokumen:
+                nama_file = f"{perusahaan}_{nama_dipilih}_{tahun}_{bukti_dokumen.name}"
+                path_file = os.path.join(FOLDER, nama_file)
+                with open(path_file, "wb") as f:
+                    f.write(bukti_dokumen.getbuffer())
+                st.success(f"✅ Dokumen disimpan di `{path_file}`")
 
-    hasil_evaluasi = []
-    grouped_eval = df_kualifikasi.groupby(["Perusahaan", "Tahun Awal Penugasan", "Nama", "Jabatan", "Organ Risiko"])
-    for (perusahaan, tahun, nama, jabatan, organ), group in grouped_eval:
-        organ_key = organ.strip().lower()
-        validasi = kualifikasi_validasi.get(organ_key, {})
+            if st.button("🔄 Tambahkan ke Tabel Kualifikasi", key="tambah_kualifikasi"):
+                data_baru = {
+                    "Perusahaan": perusahaan,
+                    "Tahun Awal Penugasan": tahun,
+                    "Nama": nama_dipilih,
+                    "Jabatan": data_terpilih["Jabatan"].values[0],
+                    "Unit": data_terpilih["Unit"].values[0],
+                    "Organ Risiko": data_terpilih["Organ Risiko"].values[0],
+                    "Nama Pelatihan/Sertifikasi": nama_pelatihan,
+                    "Jenis": jenis_pelatihan,
+                    "Jam": jam,
+                    "Bulan_Tahun Pelatihan": bulan_tahun,
+                    "Nama File Dokumen": nama_file
+                }
 
-        total_jam = group["Jam"].sum()
-        total_sertifikasi = group[group["Jenis"] == "Sertifikasi"].shape[0]
-        total_topik = group["Nama Pelatihan/Sertifikasi"].nunique()
+                st.session_state["data_kualifikasi"] = pd.concat([
+                    st.session_state["data_kualifikasi"],
+                    pd.DataFrame([data_baru])
+                ], ignore_index=True)
 
-        status_jam = "✅"
-        status_sertifikasi = "✅"
-        status_topik = "✅"
-
-        if "kepala" in jabatan.lower() and organ_key == "spi":
-            if total_jam < validasi.get("kepala_jam", 0):
-                status_jam = "❌"
-        elif "anggota" in jabatan.lower() and organ_key == "spi":
-            if total_jam < validasi.get("anggota_jam", 0):
-                status_jam = "❌"
-        elif total_jam < validasi.get("min_jam", 0):
-            status_jam = "❌"
-
-        if total_sertifikasi < validasi.get("sertifikasi_wajib", 0):
-            status_sertifikasi = "❌"
-        elif total_sertifikasi < validasi.get("sertifikasi_total", 0):
-            status_sertifikasi = "❌"
-
-        if total_topik < validasi.get("min_topik", 0):
-            status_topik = "❌"
-
-        hasil_evaluasi.append({
-            "Perusahaan": perusahaan,
-            "Tahun": tahun,
-            "Nama": nama,
-            "Jabatan": jabatan,
-            "Organ Risiko": organ,
-            "Total Jam": total_jam,
-            "Status Jam": status_jam,
-            "Jumlah Sertifikasi": total_sertifikasi,
-            "Status Sertifikasi": status_sertifikasi,
-            "Jumlah Topik": total_topik,
-            "Status Topik": status_topik
-        })
-
-    df_evaluasi = pd.DataFrame(hasil_evaluasi)
-
-    # ⏳ Siapkan file & unduhan
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    filename = f"kualifikasi_risiko_{timestamp}.xlsx"
-    file_path = os.path.join(FOLDER, filename)
-    output = io.BytesIO()
-
-    with pd.ExcelWriter(file_path, engine="xlsxwriter") as writer_server, \
-         pd.ExcelWriter(output, engine="xlsxwriter") as writer_download:
-        df_kualifikasi.to_excel(writer_server, sheet_name="Data Kualifikasi", index=False)
-        df_belum_penuhi.to_excel(writer_server, sheet_name="Belum Penuhi Jam", index=False)
-        df_evaluasi.to_excel(writer_server, sheet_name="Evaluasi Kepatuhan", index=False)
-
-        df_kualifikasi.to_excel(writer_download, sheet_name="Data Kualifikasi", index=False)
-        df_belum_penuhi.to_excel(writer_download, sheet_name="Belum Penuhi Jam", index=False)
-        df_evaluasi.to_excel(writer_download, sheet_name="Evaluasi Kepatuhan", index=False)
-
-    output.seek(0)
-
-    st.download_button(
-        label="⬇️ Unduh Semua Data (3 Sheet)",
-        data=output,
-        file_name=filename,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+                st.success("✅ Data ditambahkan ke tabel sementara.")
 
 
 def modul_data_kualifikasi_langsung():
-    st.subheader("📑 Update Organ MR ")
     with st.expander("📄 Data Kualifikasi Organ Risiko (Editable & Simpan)", expanded=False):
-        file_kualifikasi = get_user_file("Kualifikasi_organ_MR.xlsx")
+
+        file_kualifikasi = os.path.join(FOLDER, "Kualifikasi_organ_MR.xlsx")
 
         # 🔁 Inisialisasi atau load dari file hanya sekali di awal
         if "data_kualifikasi" not in st.session_state or st.session_state["data_kualifikasi"].empty:
@@ -444,6 +329,7 @@ def modul_data_kualifikasi_langsung():
 
         # ✅ Tampilkan tabel editable
         df_kualifikasi = st.session_state["data_kualifikasi"]
+
         df_edit = st.data_editor(
             df_kualifikasi,
             num_rows="dynamic",
@@ -452,75 +338,61 @@ def modul_data_kualifikasi_langsung():
         )
 
         if st.button("💾 Simpan Seluruh Data Kualifikasi"):
-            simpan_data_kualifikasi(df_edit)
+            df_simpan = df_edit.copy()
 
-def simpan_data_kualifikasi(df_simpan):
-    from datetime import datetime
+            # Hitung ulang Total Jam jika ada kolom jam 1/jam 2
+            if "Jam 1" in df_simpan.columns and "Jam 2" in df_simpan.columns:
+                df_simpan["Total Jam"] = df_simpan[["Jam 1", "Jam 2"]].fillna(0).sum(axis=1)
 
-    # Folder utama dan integrasi
-    folder_saved = os.getenv("DATA_FOLDER", "/app/saved")  # pastikan volume Docker pakai /app/saved
-    folder_integrasi = os.getenv("INTEGRASI_FOLDER", "/app/integrasi")  # volume untuk integrasi
+            # Simpan ke folder C:/saved
+            df_simpan.to_excel(file_kualifikasi, index=False)
+            st.session_state["data_kualifikasi"] = df_simpan.copy()
 
-    file_kualifikasi = get_user_file("Kualifikasi_organ_MR.xlsx")
+            # Simpan juga ke folder integrasi dengan nama organ_timestamp.xlsx
+            from datetime import datetime
+            FOLDER_INTEGRASI = "C:/integrasi"
+            if not os.path.exists(FOLDER_INTEGRASI):
+                os.makedirs(FOLDER_INTEGRASI)
 
-    # Hitung ulang Total Jam jika ada kolom jam 1/jam 2
-    if "Jam 1" in df_simpan.columns and "Jam 2" in df_simpan.columns:
-        df_simpan["Total Jam"] = df_simpan[["Jam 1", "Jam 2"]].fillna(0).sum(axis=1)
+            timestamp = datetime.now().strftime("%d%m%y_%H%M%S")
+            file_integrasi = os.path.join(FOLDER_INTEGRASI, f"organ_{timestamp}.xlsx")
+            df_simpan.to_excel(file_integrasi, index=False)
 
-    try:
-        # ✅ Pastikan folder-folder aman
-        os.makedirs(folder_saved, exist_ok=True)
-        os.makedirs(folder_integrasi, exist_ok=True)
+            st.success("✅ Data berhasil disimpan ke dua lokasi.")
+            st.info(f"📂 Disimpan di: `{file_kualifikasi}`")
+            st.info(f"📂 Tersalin ke integrasi: `{file_integrasi}`")
 
-        # ✅ Simpan ke lokasi utama
-        df_simpan.to_excel(file_kualifikasi, index=False, engine="openpyxl")
-        st.session_state["data_kualifikasi"] = df_simpan.copy()
-        st.session_state["df_kualifikasi_mr"] = df_simpan.copy()
-
-        # ✅ Simpan juga ke folder integrasi dengan nama timestamp
-        timestamp = datetime.now().strftime("%d%m%y_%H%M%S")
-        file_integrasi = os.path.join(folder_integrasi, f"organ_{timestamp}.xlsx")
-        df_simpan.to_excel(file_integrasi, index=False, engine="openpyxl")
-
-        # ✅ Notifikasi sukses
-        st.success("✅ Data berhasil disimpan ke dua lokasi.")
-        st.info(f"📂 Disimpan di: `{file_kualifikasi}`")
-        st.info(f"📂 Tersalin ke integrasi: `{file_integrasi}`")
-
-    except Exception as e:
-        st.error(f"❌ Gagal menyimpan data kualifikasi: {e}")
-        if 'log_debug' in globals():
-            log_debug(f"❌ Gagal simpan data kualifikasi: {e}")
 
 
 def cek_organ_belum_lapor_kualifikasi():
-    st.subheader("🔍 Organ Risiko dengan Pelatihan Minim")
+    st.subheader("🔍 Organ Risiko yang Belum Melaporkan Pelatihan")
 
+    df_laporan = load_laporan_data()
     df_kualifikasi = st.session_state.get("data_kualifikasi", pd.DataFrame())
 
-    if df_kualifikasi.empty:
-        st.info("📭 Belum ada data kualifikasi yang tersedia.")
+    if df_laporan.empty:
+        st.info("📭 Data Organ Pengelola Risiko belum tersedia.")
         return
 
-    # Group by Nama & Tahun
-    grouped = df_kualifikasi.groupby(["Perusahaan", "Tahun Awal Penugasan", "Nama", "Jabatan", "Organ Risiko"])
-    summary = grouped["Jam"].sum().reset_index()
-    summary.rename(columns={"Jam": "Total Jam Pelatihan"}, inplace=True)
-
-    # Filter yang jam pelatihannya 0
-    df_minim = summary[summary["Total Jam Pelatihan"] < 10]
-
-    if df_minim.empty:
-        st.success("✅ Semua organ telah memiliki pelatihan yang memadai.")
+    if df_kualifikasi.empty:
+        st.warning("⚠️ Belum ada data kualifikasi yang masuk. Semua organ dianggap belum melapor.")
+        df_belum_lapor = df_laporan.copy()
     else:
-        st.warning(f"⚠️ Terdapat {len(df_minim)} individu dengan pelatihan < 10 jam:")
-        st.dataframe(df_minim, use_container_width=True)
+        # Buat kolom kunci gabungan untuk mencocokkan baris unik
+        df_laporan["KEY"] = df_laporan["Perusahaan"].astype(str) + "|" + df_laporan["Nama"].astype(str) + "|" + df_laporan["Tahun Awal Penugasan"].astype(str)
+        df_kualifikasi["KEY"] = df_kualifikasi["Perusahaan"].astype(str) + "|" + df_kualifikasi["Nama"].astype(str) + "|" + df_kualifikasi["Tahun Awal Penugasan"].astype(str)
 
+        # Cari organ yang belum tercatat di data kualifikasi
+        df_belum_lapor = df_laporan[~df_laporan["KEY"].isin(df_kualifikasi["KEY"])].drop(columns=["KEY"])
 
-def cek_kepatuhan_kualifikasi():
+    if df_belum_lapor.empty:
+        st.success("✅ Semua organ telah melaporkan pelatihannya.")
+    else:
+        st.warning(f"⚠️ Terdapat {len(df_belum_lapor)} organ yang belum melaporkan pelatihannya:")
+        st.dataframe(df_belum_lapor, use_container_width=True)
+
+def cek_kepatuhan_kualifikasi(df_kualifikasi: pd.DataFrame):
     st.subheader("🧾 Evaluasi Pemenuhan Kualifikasi Organ")
-
-    df_kualifikasi = st.session_state.get("data_kualifikasi", pd.DataFrame())
 
     # Struktur validasi syarat minimum
     kualifikasi_validasi = {
@@ -592,104 +464,28 @@ def cek_kepatuhan_kualifikasi():
 
     df_hasil = pd.DataFrame(hasil_evaluasi)
     st.dataframe(df_hasil, use_container_width=True)
-    
-def simpan_kualifikasi_ke_server(df: pd.DataFrame):
-    folder_simpan = "/app/data_integrasi"
-    os.makedirs(folder_simpan, exist_ok=True)
-
-    df_info = st.session_state.get("copy_informasi_perusahaan", pd.DataFrame())
-    info_dict = {}
-    if isinstance(df_info, pd.DataFrame) and not df_info.empty:
-        required_cols = {"Data yang dibutuhkan", "Input Pengguna"}
-        if required_cols.issubset(df_info.columns):
-            for _, row in df_info.iterrows():
-                info_dict[row["Data yang dibutuhkan"]] = row["Input Pengguna"]
-        else:
-            st.warning("⚠️ Kolom 'Data yang dibutuhkan' dan 'Input Pengguna' tidak lengkap dalam sheet profil.")
-            return
-
-    def safe_get_val(col, fallback="NA"):
-        if col in df.columns:
-            val = df[col].dropna().astype(str)
-            if not val.empty:
-                val0 = val.iloc[0].strip()
-                return val0 if val0 else fallback
-        return info_dict.get(col, fallback)
-
-    from datetime import datetime
-
-    kode_perusahaan = safe_get_val("Kode Perusahaan")
-    divisi = safe_get_val("Divisi")
-    departemen = safe_get_val("Departemen")
-    tanggal_jam_str = datetime.now().strftime("%d-%m-%Y_%H-%M")  # ← sekarang menyertakan jam dan menit
-
-    def bersihkan_nama(nama):
-        return str(nama).strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
-
-    nama_file = f"kualifikasi_{bersihkan_nama(kode_perusahaan)}_{bersihkan_nama(divisi)}_{bersihkan_nama(departemen)}_{tanggal_jam_str}.xlsx"
-    path_lengkap = os.path.join(folder_simpan, nama_file)
-
-    try:
-        with pd.ExcelWriter(path_lengkap, engine="xlsxwriter") as writer:
-            df.to_excel(writer, sheet_name="Kualifikasi", index=False)
-
-        st.success("✅ File kualifikasi berhasil disimpan.")
-        st.info(f"📁 Lokasi file: `{path_lengkap}`")
-    except Exception as e:
-        st.error("❌ Gagal menyimpan file kualifikasi.")
-        st.warning(f"Detail error: {e}")
 
 
 def main():
-    st.title("📘 Kualifikasi Organ Pengelola Risiko")
-    st.markdown("---")
+    
+    st.markdown("Petunjuk berdasarkan *SK-3/DKU.MBU/05/2023* – Kementerian BUMN")
 
-    # Inisialisasi folder simpan
-    load_dotenv()
-    global FOLDER
-    FOLDER = os.getenv("DATA_FOLDER", "/app/saved")
-    os.makedirs(FOLDER, exist_ok=True)
+    st.markdown("---")  # 🔻 PEMISAH antar bagian
 
-    # 📥 Upload file utama kualifikasi
-    with st.expander("📥 Upload File Kualifikasi Organ", expanded=True):
-        upload_data_kualifikasi_saja()
-    st.markdown("---")
-
-    # Inisialisasi session jika belum ada
-    if "data_kualifikasi" not in st.session_state:
-        st.session_state["data_kualifikasi"] = pd.DataFrame(columns=[
-            "Perusahaan", "Tahun Awal Penugasan", "Nama", "Jabatan", "Unit", "Organ Risiko",
-            "Nama Pelatihan/Sertifikasi", "Jenis", "Jam", "Bulan_Tahun Pelatihan", "Nama File Dokumen"
-        ])
-
-    # === MODUL ACUAN & INPUT ===
-    st.subheader("📘 Modul Acuan & Input Manual")
-    modul_kualifikasi_organ()
-    tampilkan_data_kualifikasi()
+    modul_pendaftaran_organ()
+    
     modul_data_kualifikasi_langsung()
-    st.markdown("---")
 
-    # === ANALISIS PEMENUHAN ===
-    st.subheader("🔍 Pemenuhan Kualifikasi")
-    with st.expander("📋 Cek Organ Belum Penuhi Jam Minimum", expanded=False):
+    st.markdown("---")  # 🔻 PEMISAH antar bagian
+
+    st.subheader("🔎 Cek Pemenuhan")
+    with st.expander("🔎 Cek Organ Belum Lapor Kualifikasi", expanded=False):
         cek_organ_belum_lapor_kualifikasi()
 
-    with st.expander("🧾 Evaluasi Kepatuhan Kualifikasi", expanded=False):
-        cek_kepatuhan_kualifikasi()
-    st.markdown("---")
+    if "data_kualifikasi" in st.session_state:
+        with st.expander("🔎 Evaluasi Kepatuhan Kualifikasi", expanded=False):
+            cek_kepatuhan_kualifikasi(st.session_state["data_kualifikasi"])
 
-    # === SIMPAN FILE ===
-    # === SIMPAN FILE MANUAL DENGAN TOMBOL ===
-    df_kualifikasi = st.session_state.get("data_kualifikasi", pd.DataFrame())
-
-    st.markdown("## 💾 Simpan & Unduh Data Kualifikasi")
-
-    # Tombol simpan ke server integrasi
-    if st.button("📤 Simpan ke Server Integrasi"):
-        simpan_kualifikasi_ke_server(df_kualifikasi)
-
-    # Tombol unduh file Excel 3-sheet
-    simpan_semua_kualifikasi_dengan_download()
 
 if __name__ == "__main__":
     main()
