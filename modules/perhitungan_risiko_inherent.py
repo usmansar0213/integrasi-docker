@@ -496,7 +496,7 @@ def save_and_download_inherent_dampak(daftar_tabel, kode_perusahaan="NA"):
     )
 
 def load_uploaded_file(uploaded_file):
-    """Muat file upload untuk Risiko Inherent, Strategi, Sasaran, atau Profil Risiko."""
+    """ SMuat file upload untuk Risiko Inherent, Strategi, Sasaran, atau Profil Risiko."""
     if uploaded_file is not None:
         try:
             xls = pd.ExcelFile(uploaded_file)
@@ -659,7 +659,7 @@ def main():
     cek_data_wajib_awal()
 
     uploaded_files = st.file_uploader(
-    "📥 Silakan unggah **file Strategi Risiko** dan **file Profil Risiko** (.xlsx)",
+    "📥 Silakan unggah 2 file: Strategi Risiko dan Profil Risiko (.xlsx)",
     type=["xlsx"],
     accept_multiple_files=True,
     key="file_uploader_multi"
