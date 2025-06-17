@@ -6,177 +6,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime
 from calendar import month_name
-from modules.utils import get_user_file
-from modules.utils import get_user_folder, get_user_file
-import io
 
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-def get_sheet_map(xls: pd.ExcelFile) -> dict:
-    """
-    Mengembalikan dictionary nama sheet dengan key lowercase untuk lookup aman.
-    """
-    return {sheet.lower(): sheet for sheet in xls.sheet_names}
-def upload_semua_file_monitoring(uploaded_files):
-    if not uploaded_files:
-        return
-
-    for file in uploaded_files:
-        try:
-            xls = pd.ExcelFile(file)
-            sheet_map = {sheet.lower(): sheet for sheet in xls.sheet_names}
-
-            def load_sheet(sheet_name_expected: str, session_key: str):
-                for sheet_actual in xls.sheet_names:
-                    if sheet_actual.strip().lower() == sheet_name_expected.strip().lower():
-                        df = xls.parse(sheet_actual)
-                        st.session_state[session_key] = df
-                        break
-
-            # Load sheet ke session state
-            load_sheet("program mitigasi", "copy_update_program_mitigasi")
-            load_sheet("kri", "copy_update_kri")
-            load_sheet("Summary RBB", "copy_summary_rbb")
-            load_sheet("risiko gabungan", "copy_risiko_update_terpilih")
-            load_sheet("update_risk_details", "copy_update_risk_details")
-            load_sheet("deskripsi_risiko", "copy_deskripsi_risiko")
-            load_sheet("key_risk_indicator", "copy_key_risk_indicator")
-            load_sheet("anggaran pic", "copy_tabel_anggaran_pic")
-            load_sheet("deskripsi mitigasi", "copy_deskripsi_mitigasi")
-            load_sheet("residual_dampak", "copy_tabel_residual_dampak")
-            load_sheet("residual_prob", "copy_tabel_residual_probabilitas")
-            load_sheet("residual_eksposur", "copy_tabel_residual_eksposur")
-            load_sheet("ambang batas risiko", "copy_ambang_batas_risiko")
-            load_sheet("rasio keuangan", "copy_rasio_keuangan")
-
-            if "informasi_perusahaan" in sheet_map:
-                df = xls.parse(sheet_map["informasi_perusahaan"])
-                if "Data yang dibutuhkan" in df.columns and "Input Pengguna" in df.columns:
-                    st.session_state["copy_informasi_perusahaan"] = df
-
-            if "copy_tabel_risiko_gabungan" not in st.session_state:
-                if "copy_deskripsi_risiko" in st.session_state:
-                    st.session_state["copy_tabel_risiko_gabungan"] = st.session_state["copy_deskripsi_risiko"].copy()
-
-        except Exception as e:
-            st.error(f"❌ Gagal membaca file: {file.name}")
-            st.warning(f"Detail: {e}")
-def gabungkan_semua_file_excel(uploaded_files, kolom_kunci="Kode Risiko"):
-    df_gabungan = pd.DataFrame()
-    data_profil = {}
-
-    def proses_file(uploaded_file, filename):
-        nonlocal data_profil
-        try:
-            xls = pd.ExcelFile(uploaded_file)
-            all_sheets = []
-
-            for sheet_name in xls.sheet_names:
-                sheet_name_lc = sheet_name.strip().lower()
-                sheet_key = sheet_name.strip().lower().replace(" ", "_")
-                try:
-                    df = xls.parse(sheet_name)
-                    df.columns = df.columns.str.strip()
-
-                    st.session_state[f"copy_{sheet_key}"] = df.copy()
-
-                    # Tangani informasi_perusahaan
-                    if sheet_name_lc == "informasi_perusahaan":
-                        if {"Data yang dibutuhkan", "Input Pengguna"}.issubset(df.columns):
-                            data_profil = pd.Series(
-                                df["Input Pengguna"].values,
-                                index=df["Data yang dibutuhkan"]
-                            ).to_dict()
-                        continue
-
-                    # Tambahkan risiko jika kolom kunci ada
-                    if kolom_kunci in df.columns:
-                        df["Sheet Asal"] = sheet_name
-                        df["File Asal"] = filename
-                        all_sheets.append(df)
-
-                except Exception as e:
-                    st.warning(f"⚠️ Gagal memproses sheet '{sheet_name}' dari {filename}: {e}")
-                    continue
-
-            return pd.concat(all_sheets, ignore_index=True) if all_sheets else pd.DataFrame()
-
-        except Exception as e:
-            st.error(f"❌ Gagal membaca file {filename}: {e}")
-            return pd.DataFrame()
-
-    for uploaded_file in uploaded_files:
-        filename = uploaded_file.name
-        df_file = proses_file(uploaded_file, filename)
-        df_gabungan = pd.concat([df_gabungan, df_file], ignore_index=True)
-
-    if df_gabungan.empty:
-        return pd.DataFrame()
-
-    df_akhir = df_gabungan.groupby(kolom_kunci, dropna=False).agg(
-        lambda x: x.dropna().iloc[0] if not x.dropna().empty else None
-    ).reset_index()
-
-    if data_profil:
-        for kolom, nilai in data_profil.items():
-            df_akhir[kolom] = nilai
-
-    return df_akhir
-
-
-def siapkan_residual_kuartalan():
-    """
-    Menyiapkan data residual Q1 dengan menggabungkan residual probabilitas dan dampak.
-    Akan me-rename kolom kuartal agar sesuai format, serta memberikan peringatan jika kolom tidak ditemukan.
-    """
-    # Ambil dari session state
-    df_prob = st.session_state.get("copy_tabel_residual_probabilitas", pd.DataFrame())
-    df_dampak = st.session_state.get("copy_tabel_residual_dampak", pd.DataFrame())
-
-    if df_prob.empty or df_dampak.empty:
-        st.warning("⚠️ Data residual probabilitas atau dampak belum tersedia.")
-        return pd.DataFrame()
-
-    # Rename kolom agar sesuai downstream
-    df_prob = df_prob.rename(columns={
-        "Skala Q1": "Skala Q1_Probabilitas",
-        "Skala Q2": "Skala Q2_Probabilitas",
-        "Skala Q3": "Skala Q3_Probabilitas",
-        "Skala Q4": "Skala Q4_Probabilitas"
-    })
-
-    df_dampak = df_dampak.rename(columns={
-        "Skala Q1": "Skala Dampak Q1",
-        "Skala Q2": "Skala Q2_Dampak",
-        "Skala Q3": "Skala Q3_Dampak",
-        "Skala Q4": "Skala Q4_Dampak"
-    })
-
-    # Validasi kolom yang wajib ada
-    kolom_prob_rename = ["Skala Q1_Probabilitas", "Skala Q2_Probabilitas", "Skala Q3_Probabilitas", "Skala Q4_Probabilitas"]
-    kolom_dampak_rename = ["Skala Dampak Q1", "Skala Q2_Dampak", "Skala Q3_Dampak", "Skala Q4_Dampak"]
-
-    missing_prob = [k for k in kolom_prob_rename if k not in df_prob.columns]
-    missing_dampak = [k for k in kolom_dampak_rename if k not in df_dampak.columns]
-
-    if missing_prob or missing_dampak:
-        st.warning(f"⚠️ Kolom residual berikut belum lengkap:\n- Probabilitas: {missing_prob}\n- Dampak: {missing_dampak}")
-        return pd.DataFrame()
-
-    # Merge berdasarkan Kode Risiko
-    kolom_merge = ["Kode Risiko"]
-    df_residual = pd.merge(
-        df_prob[kolom_merge + kolom_prob_rename],
-        df_dampak[kolom_merge + kolom_dampak_rename],
-        on="Kode Risiko", how="outer"
-    )
-
-    # Simpan ke session state
-    st.session_state["copy_tabel_residual_q1"] = df_residual.copy()
-    return df_residual
-
-            
 # ------------------- Fungsi Update -------------------
 def update_program_mitigasi(edited_df):
     st.session_state["copy_program_mitigasi_lengkap"] = edited_df
@@ -204,130 +37,100 @@ def update_risiko_tergabung(edited_df):
 
 # ------------------- UI: Update Program Mitigasi -------------------
 def tampilkan_update_program_mitigasi():
-    st.subheader("🛠️ Update Program Mitigasi --Silahkan isi!%--")
+    st.subheader("🛠️ Update Program Mitigasi (silahkan isi %)")
 
-    # Coba ambil dari update sebelumnya
-    df_update = st.session_state.get("copy_update_program_mitigasi", pd.DataFrame())
-    df_sumber = df_update.copy()
-
-    # Kalau belum ada update sebelumnya, ambil dari anggaran PIC
-    if df_sumber.empty:
-        df_pic = st.session_state.get("copy_tabel_anggaran_pic", pd.DataFrame())
-        if df_pic.empty:
-            st.warning("⚠️ Tidak ada data anggaran PIC atau program mitigasi yang tersedia.")
-            return
-
-        # Mapping kolom fleksibel
-        kolom_alias = {
-            "kode risiko": "Kode Risiko",
-            "peristiwa risiko": "Peristiwa Risiko",
-            "peristiwa": "Peristiwa Risiko",
-            "jenis program dalam rkap": "Jenis Program Dalam RKAP",
-            "pic": "PIC",
-        }
-
-        df_pic.columns = [kolom_alias.get(col.strip().lower(), col) for col in df_pic.columns]
-
+    df = st.session_state.get("copy_tabel_anggaran_pic")
+    if isinstance(df, pd.DataFrame) and not df.empty:
         kolom_dipilih = ["Kode Risiko", "Peristiwa Risiko", "Jenis Program Dalam RKAP", "PIC"]
-        if not all(k in df_pic.columns for k in kolom_dipilih):
-            st.error("❌ Kolom wajib tidak ditemukan dalam tabel sumber.")
-            st.write("Kolom yang tersedia:", df_pic.columns.tolist())
-            return
+        df_mitigasi = df[kolom_dipilih].copy()
 
-        df_sumber = df_pic[kolom_dipilih].copy()
-        df_sumber["Progress Program Mitigasi (%)"] = 0
-        df_sumber["Keterangan"] = ""
+        # Tambahkan kolom default kosong untuk "Progress" dan "Keterangan"
+        df_mitigasi["Progress Program Mitigasi (%)"] = 0
+        df_mitigasi["Keterangan"] = ""
 
+        # Overwrite jika data update sebelumnya tersedia
+        df_update = st.session_state.get("copy_update_program_mitigasi", pd.DataFrame())
+        if "Kode Risiko" in df_update.columns:
+            df_update_indexed = df_update.set_index("Kode Risiko")
+
+            if "Progress Program Mitigasi (%)" in df_update_indexed.columns:
+                df_mitigasi["Progress Program Mitigasi (%)"] = df_mitigasi["Kode Risiko"].map(
+                    df_update_indexed["Progress Program Mitigasi (%)"]
+                ).fillna(0)
+
+            if "Keterangan" in df_update_indexed.columns:
+                df_mitigasi["Keterangan"] = df_mitigasi["Kode Risiko"].map(
+                    df_update_indexed["Keterangan"]
+                ).fillna("")
+
+        # Tampilkan editor
+        edited_df = st.data_editor(
+            df_mitigasi,
+            use_container_width=True,
+            num_rows="dynamic",
+            key="editor_program_mitigasi"
+        )
+
+        if st.button("✅ Simpan Update Program Mitigasi"):
+            update_program_mitigasi(edited_df)
+            st.success("✅ Update Program Mitigasi disimpan.")
     else:
-        # Pastikan kolom lengkap untuk editor
-        if "Progress Program Mitigasi (%)" not in df_sumber.columns:
-            df_sumber["Progress Program Mitigasi (%)"] = 0
-        if "Keterangan" not in df_sumber.columns:
-            df_sumber["Keterangan"] = ""
+        st.warning("⚠️ Tabel anggaran PIC belum tersedia di session state.")
 
-    # Tampilkan editor
-    edited_df = st.data_editor(
-        df_sumber,
-        use_container_width=True,
-        num_rows="dynamic",
-        key="editor_program_mitigasi"
-    )
-
-    if st.button("✅ Simpan Update Program Mitigasi"):
-        update_program_mitigasi(edited_df)
-        st.success("✅ Update Program Mitigasi disimpan.")
 
 
 def tampilkan_update_kri():
-    st.subheader("📈 Update (KRI)--Silahkan isi--")
+    st.subheader("📈 Update Key Risk Indicator (KRI)")
 
-    # Ambil dari update user sebelumnya kalau tersedia
-    df_update = st.session_state.get("copy_update_kri", pd.DataFrame())
-    df_sumber = df_update.copy()
-
-    # Kalau tidak ada, gunakan data KRI lengkap
-    if df_sumber.empty:
-        df_kri = st.session_state.get("copy_key_risk_indicator", pd.DataFrame())
-        if df_kri.empty:
-            st.warning("⚠️ Tabel Key Risk Indicator belum tersedia di session state.")
-            return
-
-        # Mapping nama kolom fleksibel
-        kolom_alias = {
-            "kode risiko": "Kode Risiko",
-            "peristiwa risiko": "Peristiwa Risiko",
-            "key risk indicators (kri)": "Key Risk Indicators (KRI)",
-            "unit kri": "Unit KRI",
-            "kri aman": "KRI Aman",
-            "kri hati-hati": "KRI Hati-Hati",
-            "kri bahaya": "KRI Bahaya"
-        }
-        df_kri.columns = [kolom_alias.get(col.strip().lower(), col) for col in df_kri.columns]
-
+    df = st.session_state.get("copy_key_risk_indicator")
+    if isinstance(df, pd.DataFrame) and not df.empty:
         kolom_dipilih = [
             "Kode Risiko", "Peristiwa Risiko", 
             "Key Risk Indicators (KRI)", "Unit KRI", 
             "KRI Aman", "KRI Hati-Hati", "KRI Bahaya"
         ]
-        if not all(k in df_kri.columns for k in kolom_dipilih):
-            st.error("❌ Kolom penting tidak ditemukan dalam tabel KRI.")
-            st.write("Kolom yang tersedia:", df_kri.columns.tolist())
-            return
 
-        df_sumber = df_kri[kolom_dipilih].copy()
-        df_sumber["KRI Saat Ini"] = ""
-        df_sumber["Pengelolaan KRI"] = ""
+        df_kri = df[kolom_dipilih].copy()
 
+        df_update = st.session_state.get("copy_update_kri", pd.DataFrame())
+        if "Kode Risiko" in df_update.columns:
+            df_update_indexed = df_update.set_index("Kode Risiko")
+
+            df_kri["KRI Saat Ini"] = df_kri["Kode Risiko"].map(
+                df_update_indexed["KRI Saat Ini"] if "KRI Saat Ini" in df_update_indexed.columns else ""
+            ).fillna("")
+
+            df_kri["Pengelolaan KRI"] = df_kri["Kode Risiko"].map(
+                df_update_indexed["Pengelolaan KRI"] if "Pengelolaan KRI" in df_update_indexed.columns else ""
+            ).fillna("")
+        else:
+            df_kri["KRI Saat Ini"] = ""
+            df_kri["Pengelolaan KRI"] = ""
+
+        edited_df = st.data_editor(
+            df_kri,
+            use_container_width=True,
+            num_rows="dynamic",
+            column_config={
+                "Pengelolaan KRI": st.column_config.SelectboxColumn(
+                    label="Pengelolaan KRI",
+                    options=["Kurang", "Cukup"],
+                    required=False
+                )
+            },
+            key="editor_kri"
+        )
+
+        if st.button("✅ Simpan Update KRI"):
+            update_kri(edited_df)
+            st.success("✅ Update KRI disimpan.")
     else:
-        # Tambahkan kolom jika belum tersedia
-        if "KRI Saat Ini" not in df_sumber.columns:
-            df_sumber["KRI Saat Ini"] = ""
-        if "Pengelolaan KRI" not in df_sumber.columns:
-            df_sumber["Pengelolaan KRI"] = ""
-
-    # Tampilkan editor
-    edited_df = st.data_editor(
-        df_sumber,
-        use_container_width=True,
-        num_rows="dynamic",
-        column_config={
-            "Pengelolaan KRI": st.column_config.SelectboxColumn(
-                label="Pengelolaan KRI",
-                options=["Kurang", "Cukup"],
-                required=False
-            )
-        },
-        key="editor_kri"
-    )
-
-    if st.button("✅ Simpan Update KRI"):
-        update_kri(edited_df)
-        st.success("✅ Update KRI disimpan.")
+        st.warning("⚠️ Tabel Key Risk Indicator belum tersedia di session state.")
 
 
 # ------------------- UI: Ringkasan RBB + Pencapaian -------------------
 def tampilkan_summary_rbb_dengan_pencapaian():
-    st.subheader("📋Update Risk-Based Budgeting --Silahkan isi!--")
+    st.subheader("📋 Ringkasan Risk-Based Budgeting + Pencapaian")
 
     df_summary = st.session_state.get("copy_summary_rbb", pd.DataFrame())
     if isinstance(df_summary, pd.DataFrame) and not df_summary.empty:
@@ -405,38 +208,65 @@ def tampilkan_residual_q1():
                 st.success("✅ Update residual risiko Q1 disimpan.")
     else:
         st.info("ℹ️ Data residual risiko Q1 belum tersedia di session state.")
-
-
-# ========================= FUNGSI PEMBANTU ========================= #
-
-def merge_kri_mitigasi_residual(df):
+def tampilkan_gabungan_update_risiko():
+    # Ambil semua data dari session state
+    df_risiko = st.session_state.get("copy_tabel_risiko_gabungan", pd.DataFrame())
     df_mitigasi = st.session_state.get("copy_update_program_mitigasi", pd.DataFrame())
     df_kri = st.session_state.get("copy_update_kri", pd.DataFrame())
     df_kri_lengkap = st.session_state.get("copy_key_risk_indicator", pd.DataFrame())
     df_residual = st.session_state.get("copy_tabel_residual_q1", pd.DataFrame())
+    df_summary = st.session_state.get("copy_summary_rbb", pd.DataFrame())
 
+    if df_risiko.empty:
+        st.warning("⚠️ Data risiko gabungan belum tersedia.")
+        return pd.DataFrame()
+
+    df = df_risiko.copy()
+
+    # 🔄 MERGE DATA TAMBAHAN
     if not df_mitigasi.empty:
         kolom_mitigasi = ["Jenis Program Dalam RKAP", "PIC", "Progress Program Mitigasi (%)", "Keterangan"]
-        df = df.drop(columns=[col for col in kolom_mitigasi if col in df.columns], errors="ignore")
         df = df.merge(df_mitigasi[["Kode Risiko"] + kolom_mitigasi].drop_duplicates(), on="Kode Risiko", how="left")
 
     if not df_kri.empty:
-        kolom_kri = ["KRI Saat Ini", "Pengelolaan KRI"]
-        df = df.drop(columns=[col for col in kolom_kri if col in df.columns], errors="ignore")
-        df = df.merge(df_kri[["Kode Risiko"] + kolom_kri].drop_duplicates(), on="Kode Risiko", how="left")
+        kolom_kri = ["Kode Risiko", "KRI Saat Ini", "Pengelolaan KRI"]
+        df = df.merge(df_kri[kolom_kri].drop_duplicates(), on="Kode Risiko", how="left")
 
     if not df_kri_lengkap.empty:
         kolom_kri_lengkap = ["Kode Risiko", "Key Risk Indicators (KRI)", "Unit KRI", "KRI Aman", "KRI Hati-Hati", "KRI Bahaya"]
         df = df.merge(df_kri_lengkap[kolom_kri_lengkap].drop_duplicates(), on="Kode Risiko", how="left")
 
     if not df_residual.empty:
-        kolom_residual = [col for col in df_residual.columns if "Kode Risiko" in col or "Skala" in col]
+        kolom_residual = [
+            "Kode Risiko", "Skala Probabilitas Q1", "Skala Q2_Probabilitas", "Skala Q3_Probabilitas", "Skala Q4_Probabilitas",
+            "Skala Dampak Q1", "Skala Q2_Dampak", "Skala Q3_Dampak", "Skala Q4_Dampak"
+        ]
         df = df.merge(df_residual[kolom_residual].drop_duplicates(), on="Kode Risiko", how="left")
 
-    return df
+    # 📊 FINANSIAL & PERHITUNGAN DAMPAK
+    if df_summary.empty or "Kategori" not in df_summary.columns:
+        st.warning("⚠️ Data summary RBB belum lengkap atau kosong.")
+        return pd.DataFrame()
+    
+    # Tambahkan informasi perusahaan ke kolom awal
+    df_info = st.session_state.get("copy_informasi_perusahaan", pd.DataFrame())
+    info_dict = {}
+    if isinstance(df_info, pd.DataFrame) and not df_info.empty:
+        for _, row in df_info.iterrows():
+            info_dict[row["Data yang dibutuhkan"]] = row["Input Pengguna"]
 
-def hitung_kinerja_keuangan(df):
-    df_summary = st.session_state.get("copy_summary_rbb", pd.DataFrame())
+    df.insert(0, "Kode Perusahaan", info_dict.get("Kode Perusahaan", ""))
+    df.insert(1, "Nama Perusahaan", info_dict.get("Nama Perusahaan", ""))
+    df.insert(2, "Alamat", info_dict.get("Alamat", ""))
+    df.insert(3, "Jenis Bisnis", info_dict.get("Jenis Bisnis", ""))
+    df.insert(4, "Direktorat", info_dict.get("Direktorat", ""))
+    df.insert(5, "Divisi", info_dict.get("Divisi", ""))
+    df.insert(6, "Departemen", info_dict.get("Departemen", ""))
+    
+    # Hitung bulan dan kuartal pelaporan
+    bulan_saat_ini = datetime.now().month
+    kuartal = (bulan_saat_ini - 1) // 3 + 1
+
     df_summary["Nilai"] = pd.to_numeric(df_summary["Nilai"], errors="coerce")
     df_summary["Pencapaian Saat Ini"] = pd.to_numeric(df_summary["Pencapaian Saat Ini"], errors="coerce")
 
@@ -450,121 +280,102 @@ def hitung_kinerja_keuangan(df):
     df["Nilai Biaya"] = nilai_biaya
     df["Pencapaian Biaya"] = pencapaian_biaya
 
+    # % Kinerja Keuangan
     persentase = (pencapaian_pendapatan / nilai_pendapatan) * 100 if nilai_pendapatan else None
-    df["% Kinerja Keuangan"] = f"{persentase:.2f}%" if persentase else "-"
+    persentase_float = persentase if persentase is not None else 0
+    df["% Kinerja Keuangan"] = f"{persentase_float:.2f}%" if persentase is not None else "-"
 
-    bulan = datetime.now().month
-    batas_biaya_bulanan = (nilai_biaya / 12) * bulan if nilai_biaya else 0
-    batas_pendapatan_bulanan = (nilai_pendapatan / 12) * bulan if nilai_pendapatan else 0
+    # Dampak Residual Saat Ini
+    df["Nilai Dampak"] = pd.to_numeric(df.get("Nilai Dampak"), errors="coerce")
+    df["Dampak Residual Saat Ini"] = df["Nilai Dampak"] * ((100 - persentase_float) / 100)
+    df["Dampak Residual Saat Ini"] = df["Dampak Residual Saat Ini"].apply(
+        lambda x: f"{int(round(x)):,}" if pd.notnull(x) else "-"
+    )
 
-    df["Status Kinerja Biaya"] = df["Pencapaian Biaya"].apply(lambda x: "Kurang" if x > batas_biaya_bulanan else "Cukup")
-    df["Status Kinerja Pendapatan"] = df["Pencapaian Pendapatan"].apply(lambda x: "Kurang" if x < batas_pendapatan_bulanan else "Cukup")
+    # Evaluasi Status Kinerja Biaya & Pendapatan
+    batas_biaya_bulanan = (nilai_biaya / 12) * bulan_saat_ini if nilai_biaya else 0
+    batas_pendapatan_bulanan = (nilai_pendapatan / 12) * bulan_saat_ini if nilai_pendapatan else 0
 
-    return df
+    df["Status Kinerja Biaya"] = df["Pencapaian Biaya"].apply(
+        lambda x: "Kurang" if x > batas_biaya_bulanan else "Cukup"
+    )
+    df["Status Kinerja Pendapatan"] = df["Pencapaian Pendapatan"].apply(
+        lambda x: "Kurang" if x < batas_pendapatan_bulanan else "Cukup"
+    )
 
+    # Pengelolaan Mitigasi
+    target_progress = (100 / 12) * bulan_saat_ini
+    df["Progress Program Mitigasi (%)"] = pd.to_numeric(df.get("Progress Program Mitigasi (%)", 0), errors="coerce").fillna(0)
+    df["Pengelolaan Mitigasi"] = df["Progress Program Mitigasi (%)"].apply(
+        lambda x: "Cukup" if x >= target_progress else "Kurang"
+    )
 
-def hitung_residual_bumn(df):
-    bulan_saat_ini = datetime.now().month
-    kuartal = (bulan_saat_ini - 1) // 3 + 1
-    mapping_prob = {1: "Skala Probabilitas Q1", 2: "Skala Q2_Probabilitas", 3: "Skala Q3_Probabilitas", 4: "Skala Q4_Probabilitas"}
-    mapping_dampak = {1: "Skala Dampak Q1", 2: "Skala Q2_Dampak", 3: "Skala Q3_Dampak", 4: "Skala Q4_Dampak"}
-
+    # Hitung Skala Probabilitas Saat Ini
+    mapping_prob = {
+        1: "Skala Probabilitas Q1",
+        2: "Skala Q2_Probabilitas",
+        3: "Skala Q3_Probabilitas",
+        4: "Skala Q4_Probabilitas"
+    }
     kolom_prob = mapping_prob.get(kuartal, "Skala Probabilitas Q1")
-    kolom_dampak = mapping_dampak.get(kuartal, "Skala Dampak Q1")
-
     df[kolom_prob] = pd.to_numeric(df.get(kolom_prob), errors="coerce")
-    df[kolom_dampak] = pd.to_numeric(df.get(kolom_dampak), errors="coerce")
 
-    def hitung_prob(row):
-        val = row.get(kolom_prob)
-        if pd.isna(val): return "-"
+    def hitung_probabilitas_saat_ini(row):
+        nilai = row.get(kolom_prob)
+        if pd.isna(nilai):
+            return "-"
         if row.get("Pengelolaan KRI") == "Kurang" or row.get("Pengelolaan Mitigasi") == "Kurang":
-            return min(val + 1, 5)
-        return val
+            return min(nilai + 1, 5)
+        return nilai
 
-    def hitung_dampak(row):
-        val = row.get(kolom_dampak)
-        if pd.isna(val): return "-"
+    df["Skala Probabilitas Saat Ini"] = df.apply(hitung_probabilitas_saat_ini, axis=1)
+
+    # Hitung Skala Dampak Saat Ini
+    mapping_dampak = {
+        1: "Skala Dampak Q1",
+        2: "Skala Q2_Dampak",
+        3: "Skala Q3_Dampak",
+        4: "Skala Q4_Dampak"
+    }
+    kolom_dampak = mapping_dampak.get(kuartal, "Skala Dampak Q1")
+    df[kolom_dampak] = pd.to_numeric(df.get(kolom_dampak), errors="coerce")
+    
+    def hitung_skala_dampak_saat_ini(row):
+        nilai = row.get(kolom_dampak)
+        if pd.isna(nilai):
+            return "-"
         if row.get("Status Kinerja Biaya") == "Kurang" or row.get("Status Kinerja Pendapatan") == "Kurang":
-            return min(val + 1, 5)
-        return val
+            return min(nilai + 1, 5)
+        return nilai
 
-    df["Skala Probabilitas Saat Ini"] = df.apply(hitung_prob, axis=1)
-    df["Skala Dampak Saat Ini"] = df.apply(hitung_dampak, axis=1)
-    df["Skala Risiko BUMN"] = pd.to_numeric(df["Skala Dampak Saat Ini"], errors="coerce") * pd.to_numeric(df["Skala Probabilitas Saat Ini"], errors="coerce")
+    df["Skala Dampak Saat Ini"] = df.apply(hitung_skala_dampak_saat_ini, axis=1)
 
-    def level(val):
-        if pd.isna(val): return "-"
-        if val <= 5: return "Rendah"
-        elif val <= 12: return "Menengah"
-        else: return "Tinggi"
+    # Tambahan untuk BUMN
+    df["Skala Dampak BUMN"] = df["Skala Dampak Saat Ini"]
+    df["Skala Probabilitas BUMN"] = df["Skala Probabilitas Saat Ini"]
+    df["Skala Risiko BUMN"] = pd.to_numeric(df["Skala Dampak BUMN"], errors="coerce") * pd.to_numeric(df["Skala Probabilitas BUMN"], errors="coerce")
 
-    df["Level Risiko BUMN"] = df["Skala Risiko BUMN"].apply(level)
-    return df
+    def tentukan_level_risiko(nilai):
+        if pd.isna(nilai):
+            return "-"
+        if nilai <= 5:
+            return "Rendah"
+        elif nilai <= 12:
+            return "Menengah"
+        else:
+            return "Tinggi"
 
+    df["Level Risiko BUMN"] = df["Skala Risiko BUMN"].apply(tentukan_level_risiko)
 
-def tambah_justifikasi_dan_keterangan(df):
-    df["Bulan Pelaporan"] = month_name[datetime.now().month]
-    df["Tahun Pelaporan"] = datetime.now().year
-    df["Justifikasi Skala Dampak"] = df.apply(justifikasi_dampak, axis=1)
-    df["Justifikasi Skala Probabilitas"] = df.apply(justifikasi_prob, axis=1)
-    df["Keterangan Skala Dampak"] = df["Justifikasi Skala Dampak"]
-    df["Keterangan Skala Probabilitas"] = df["Justifikasi Skala Probabilitas"]
-    return df
-
-# ========================= FUNGSIONALITAS UTAMA ========================= #
-
-def generate_gabungan_risiko_final():
-    """
-    Membentuk df_final berisi informasi penting untuk analisis residual dan heatmap risiko.
-    Menggabungkan data mitigasi, KRI, residual, serta kinerja keuangan yang mempengaruhi skala risiko.
-    """
-    df_risiko = st.session_state.get("copy_tabel_risiko_gabungan", pd.DataFrame())
-    if df_risiko.empty:
-        st.warning("⚠️ Data risiko gabungan belum tersedia.")
-        return pd.DataFrame()
-
-    # 🔁 Gabungkan data penting: KRI, mitigasi, residual
-    df = merge_kri_mitigasi_residual(df_risiko.copy())
-
-    # 🧮 Hitung kinerja keuangan & residual BUMN
-    df = hitung_kinerja_keuangan(df)
-    df = hitung_residual_bumn(df)
-
-    # 📝 Justifikasi
-    df["Justifikasi Skala Dampak"] = df.apply(justifikasi_dampak, axis=1)
-    df["Justifikasi Skala Probabilitas"] = df.apply(justifikasi_prob, axis=1)
-
-    # 🗓️ Metadata waktu pelaporan
     df["Bulan Pelaporan"] = month_name[datetime.now().month]
     df["Tahun Pelaporan"] = datetime.now().year
 
-    # 🔎 Pilih hanya kolom penting untuk visualisasi & pelaporan risiko
-    kolom_final = [
-        "Kode Risiko", "Peristiwa Risiko",
-        "Skala Probabilitas Saat Ini", "Skala Dampak Saat Ini",
-        "Skala Risiko BUMN", "Level Risiko BUMN",
-        "Justifikasi Skala Probabilitas", "Justifikasi Skala Dampak",
-        "PIC", "Progress Program Mitigasi (%)",
-        "KRI Saat Ini", "Pengelolaan KRI", "Pengelolaan Mitigasi",
-        "Status Kinerja Biaya", "Status Kinerja Pendapatan", "% Kinerja Keuangan",
-        "Bulan Pelaporan", "Tahun Pelaporan"
-    ]
-
-    # 💡 Ambil hanya kolom yang tersedia
-    df = df[[col for col in kolom_final if col in df.columns]].copy()
-
-    # 🔢 Tambah nomor urut
-    df = df.reset_index(drop=True)
-    df.insert(0, "No", df.index + 1)
-
-    # 💾 Simpan ke session state
-    st.session_state["copy_risiko_update_terpilih"] = df
+    df["Justifikasi Skala Dampak"] = df.apply(justifikasi_dampak, axis=1)
+    df["Justifikasi Skala Probabilitas"] = df.apply(justifikasi_prob, axis=1)
+    df["Keterangan Skala Dampak"] = df.apply(lambda row: buat_keterangan_risiko(row, jenis="dampak"), axis=1)
+    df["Keterangan Skala Probabilitas"] = df.apply(lambda row: buat_keterangan_risiko(row, jenis="prob"), axis=1)
 
     return df
-
-
- 
 
 def tampilkan_matriks_risiko(df, title="Heatmap Matriks Risiko Monitoring", x_label="Skala Dampak", y_label="Skala Probabilitas"):
     st.subheader(title)
@@ -628,117 +439,147 @@ def tampilkan_matriks_risiko(df, title="Heatmap Matriks Risiko Monitoring", x_la
     st.pyplot(fig)
 
     return df
-def simpan_integrasi_monitoring_ke_server(df: pd.DataFrame):
-    folder_simpan = "/app/data_integrasi"
-    os.makedirs(folder_simpan, exist_ok=True)
 
+
+
+    return df
+def simpan_data_monitoring():
+    import os
+
+    nama_bulan = month_name[datetime.now().month]
+    tahun = datetime.now().year
+    nama_file = f"monitoring_bulan_{nama_bulan}_{tahun}.xlsx"
+    path_folder = "C:/saved"
+    os.makedirs(path_folder, exist_ok=True)
+    path_lengkap = os.path.join(path_folder, nama_file)
+
+    with pd.ExcelWriter(path_lengkap, engine="xlsxwriter") as writer:
+        # Simpan setiap tabel jika tersedia
+        if "copy_update_program_mitigasi" in st.session_state:
+            st.session_state["copy_update_program_mitigasi"].to_excel(writer, sheet_name="Program Mitigasi", index=False)
+
+        if "copy_update_kri" in st.session_state:
+            st.session_state["copy_update_kri"].to_excel(writer, sheet_name="KRI", index=False)
+
+        if "copy_summary_rbb" in st.session_state:
+            st.session_state["copy_summary_rbb"].to_excel(writer, sheet_name="Summary RBB", index=False)
+
+        if "copy_tabel_residual_q1" in st.session_state:
+            st.session_state["copy_tabel_residual_q1"].to_excel(writer, sheet_name="Residual Q1", index=False)
+
+        if "copy_tabel_risiko_gabungan" in st.session_state:
+            st.session_state["copy_tabel_risiko_gabungan"].to_excel(writer, sheet_name="Risiko Gabungan", index=False)
+
+        if "copy_risiko_update_terpilih" in st.session_state:
+            st.session_state["copy_risiko_update_terpilih"].to_excel(writer, sheet_name="Risiko Update Final", index=False)
+
+    st.success(f"✅ File berhasil disimpan di `{path_lengkap}`")
+
+
+
+
+def hapus_kolom_duplikat(df: pd.DataFrame, keep_cols=None) -> pd.DataFrame:
+    if keep_cols is None:
+        keep_cols = []
+
+    kolom_unik = []
+    kolom_isi = {}
+
+    for col in df.columns:
+        # Jangan hapus kolom yang wajib disimpan
+        if col in keep_cols:
+            kolom_unik.append(col)
+            kolom_isi[col] = df[col]
+            continue
+
+        # Cek apakah sudah ada kolom dengan nama dan isi yang sama persis
+        duplikat = False
+        for col_eksisting, isi in kolom_isi.items():
+            if col == col_eksisting and df[col].equals(isi):
+                duplikat = True
+                break
+
+        if not duplikat:
+            kolom_unik.append(col)
+            kolom_isi[col] = df[col]
+
+    return df[kolom_unik]
+def tampilkan_rekap_gabungan_update_risiko_dengan_profil_interaktif(df_final: pd.DataFrame):
+    st.subheader("📋 Rekap Gabungan Update Risiko + Informasi Perusahaan")
+
+    # 🔢 Bulan dan Tahun
+    bulan = month_name[datetime.now().month]
+    tahun = datetime.now().year
+
+    # 🏢 Informasi perusahaan
     df_info = st.session_state.get("copy_informasi_perusahaan", pd.DataFrame())
     info_dict = {}
+
     if isinstance(df_info, pd.DataFrame) and not df_info.empty:
-        required_cols = {"Data yang dibutuhkan", "Input Pengguna"}
-        if required_cols.issubset(df_info.columns):
-            for _, row in df_info.iterrows():
-                info_dict[row["Data yang dibutuhkan"]] = row["Input Pengguna"]
-        else:
-            st.warning("⚠️ Kolom 'Data yang dibutuhkan' dan 'Input Pengguna' tidak lengkap dalam sheet profil.")
-            return
+        for _, row in df_info.iterrows():
+            info_dict[row["Data yang dibutuhkan"]] = row["Input Pengguna"]
 
-    def safe_get_val(col, fallback="NA"):
-        if col in df.columns:
-            val = df[col].dropna().astype(str)
-            if not val.empty:
-                val0 = val.iloc[0].strip()
-                return val0 if val0 else fallback
-        return info_dict.get(col, fallback)
+    # Tambahkan kolom informasi ke df_final
+    df_final["Bulan Pelaporan"] = bulan
+    df_final["Tahun Pelaporan"] = tahun
+    df_final["Nama Perusahaan"] = info_dict.get("Nama Perusahaan", "")
+    df_final["Alamat"] = info_dict.get("Alamat", "")
+    df_final["Jenis Bisnis"] = info_dict.get("Jenis Bisnis", "")
+    df_final["Direktorat"] = info_dict.get("Direktorat", "")
+    df_final["Divisi"] = info_dict.get("Divisi", "")
+    df_final["Departemen"] = info_dict.get("Departemen", "")
 
-    from datetime import datetime
+    # Susunan kolom
+    kolom_tampilkan = [
+        "Bulan Pelaporan", "Tahun Pelaporan",
+        "Nama Perusahaan", "Alamat", "Jenis Bisnis", "Direktorat", "Divisi", "Departemen",
+        "No", "Kode Risiko", "Kategori Risiko T2 & T3 KBUMN", "Peristiwa Risiko", "Peristiwa Risiko dari Deskripsi",
+        "Nilai Dampak", "Skala Dampak", "Nilai Eksposur Risiko",
+        "Skala Dampak Q1", "Skala Q2_Dampak", "Skala Q3_Dampak", "Skala Q4_Dampak", "Skala Dampak Saat Ini",
+        "Nilai Probabilitas", "Skala Probabilitas",
+        "Skala Probabilitas Q1", "Skala Q2_Probabilitas", "Skala Q3_Probabilitas", "Skala Q4_Probabilitas", "Skala Prorbabilitas saat ini",
+        "Jenis Program Dalam RKAP", "PIC", "Progress Program Mitigasi (%)",
+        "Key Risk Indicators (KRI)", "Unit KRI", "KRI Aman", "KRI Hati-Hati", "KRI Bahaya", "KRI Saat Ini"
+    ]
 
-    kode_perusahaan = safe_get_val("Kode Perusahaan")
-    divisi = safe_get_val("Divisi")
-    departemen = safe_get_val("Departemen")
-    tanggal_str = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
+    for kol in kolom_tampilkan:
+        if kol not in df_final.columns:
+            df_final[kol] = ""
 
+    with st.expander("🔍 Lihat/Edit Rekap Gabungan Monitoring"):
+        edited_df = st.data_editor(df_final[kolom_tampilkan], use_container_width=True, num_rows="dynamic")
+
+    if st.button("🔗 Integrasi"):
+        simpan_integrasi_monitoring(edited_df)
+
+def simpan_integrasi_monitoring(df: pd.DataFrame):
+    import os
+
+    # Ambil informasi dari kolom
+    kode_perusahaan = df["Kode Perusahaan"].iloc[0] if "Kode Perusahaan" in df.columns else "NA"
+    divisi = df["Divisi"].iloc[0] if "Divisi" in df.columns else "NA"
+    departemen = df["Departemen"].iloc[0] if "Departemen" in df.columns else "NA"
+    bulan = df["Bulan Pelaporan"].iloc[0] if "Bulan Pelaporan" in df.columns else month_name[datetime.now().month]
+    tahun = df["Tahun Pelaporan"].iloc[0] if "Tahun Pelaporan" in df.columns else datetime.now().year
+
+    # Bersihkan nama dari karakter yang tidak valid
     def bersihkan_nama(nama):
-        return str(nama).strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
+        return str(nama).replace(" ", "_").replace("/", "_")
 
-    nama_file = f"risk_monitoring__{bersihkan_nama(kode_perusahaan)}_{bersihkan_nama(divisi)}_{bersihkan_nama(departemen)}_{tanggal_str}.xlsx"
-    path_lengkap = os.path.join(folder_simpan, nama_file)
+    nama_file = f"integrasi_{bersihkan_nama(kode_perusahaan)}_{bersihkan_nama(divisi)}_{bersihkan_nama(departemen)}_{bulan}_{tahun}.xlsx"
+    path_folder = "C:/integrasi"
+    os.makedirs(path_folder, exist_ok=True)
+    path_lengkap = os.path.join(path_folder, nama_file)
 
     try:
         with pd.ExcelWriter(path_lengkap, engine="xlsxwriter") as writer:
             df.to_excel(writer, sheet_name="Rekap Integrasi Monitoring", index=False)
 
-        st.success("✅ File integrasi monitoring berhasil disimpan ke server.")
+        st.success("✅ File integrasi berhasil disimpan.")
         st.info(f"📁 Lokasi file: `{path_lengkap}`")
     except Exception as e:
-        st.error("❌ Gagal menyimpan file integrasi monitoring.")
+        st.error("❌ Gagal menyimpan file integrasi.")
         st.warning(f"Detail error: {e}")
-    
-def simpan_dan_unduh_data_monitoring(df_integrasi: pd.DataFrame):
-    timestamp = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
-    folder_local = "C:/saved"
-    folder_integrasi = "/app/data_integrasi"
-
-    if not os.path.exists(folder_local):
-        os.makedirs(folder_local)
-    os.makedirs(folder_integrasi, exist_ok=True)
-
-    # Informasi fallback
-    df_info = st.session_state.get("copy_informasi_perusahaan", pd.DataFrame())
-    info_dict = {}
-    if not df_info.empty:
-        for _, row in df_info.iterrows():
-            info_dict[row["Data yang dibutuhkan"]] = row["Input Pengguna"]
-
-    for kol in ["Kode Perusahaan", "Divisi", "Departemen", "Bulan Pelaporan", "Tahun Pelaporan"]:
-        if kol not in df_integrasi or df_integrasi[kol].dropna().eq("").all():
-            df_integrasi[kol] = info_dict.get(kol, "")
-
-    # Nama file
-    def bersih(s): return str(s).strip().replace(" ", "_").replace("/", "_")
-    kode = bersih(df_integrasi["Kode Perusahaan"].iloc[0])
-    divisi = bersih(df_integrasi["Divisi"].iloc[0])
-    dept = bersih(df_integrasi["Departemen"].iloc[0])
-    bulan = bersih(df_integrasi["Bulan Pelaporan"].iloc[0] or month_name[datetime.now().month])
-    tahun = str(df_integrasi["Tahun Pelaporan"].iloc[0] or datetime.now().year)
-
-    filename = f"risk_monitoring_{kode}_{divisi}_{dept}_{bulan}_{tahun}_{timestamp}.xlsx"
-    server_path = os.path.join(folder_local, f"monitoring_risiko_{timestamp}.xlsx")
-    integrasi_path = os.path.join(folder_integrasi, filename)
-
-    # Data tambahan untuk monitoring
-    df_mitigasi = st.session_state.get("copy_update_program_mitigasi", pd.DataFrame())
-    df_kri = st.session_state.get("copy_update_kri", pd.DataFrame())
-    df_summary = st.session_state.get("copy_summary_rbb", pd.DataFrame())
-
-    output = io.BytesIO()
-    with pd.ExcelWriter(server_path, engine="xlsxwriter") as w1, \
-         pd.ExcelWriter(output, engine="xlsxwriter") as w2, \
-         pd.ExcelWriter(integrasi_path, engine="xlsxwriter") as w3:
-
-        def simpan(df, sheet, writers):
-            if not df.empty:
-                for writer in writers:
-                    df_out = df.copy()
-                    if "Nomor" in df_out.columns:
-                        df_out.drop(columns=["Nomor"], inplace=True)
-                    df_out.insert(0, "Nomor", range(1, len(df_out)+1))
-                    df_out.to_excel(writer, sheet_name=sheet, index=False)
-
-        simpan(df_mitigasi, "Program Mitigasi", [w1, w2])
-        simpan(df_kri, "KRI", [w1, w2])
-        simpan(df_summary, "Summary RBB", [w1, w2])
-        simpan(df_integrasi, "Rekap Integrasi Monitoring", [w1, w2, w3])
-
-    output.seek(0)
-    st.success("✅ File integrasi dan monitoring berhasil disimpan.")
-    st.download_button(
-        "⬇️ Unduh File Monitoring Risiko",
-        data=output,
-        file_name=filename,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
 
 def justifikasi_dampak(row):
     biaya = row.get("Status Kinerja Biaya", "")
@@ -764,170 +605,96 @@ def justifikasi_prob(row):
     else:
         return "-"
 
-def fallback_risiko_gabungan():
-    """
-    Mengisi session state 'copy_tabel_risiko_gabungan' dari sumber manapun yang tersedia.
-    """
-    kandidat_keys = [
-        "copy_update_risk_details",
-        "copy_deskripsi_risiko",
-        "copy_risiko_update_terpilih",
-        "copy_tabel_gabungan"
-    ]
-
-    for key in kandidat_keys:
-        df = st.session_state.get(key, pd.DataFrame())
-        if isinstance(df, pd.DataFrame) and not df.empty:
-            if "Kode Risiko" in df.columns:
-                st.session_state["copy_tabel_risiko_gabungan"] = df.copy()
-                st.info(f"✅ Tabel risiko gabungan diambil dari `{key}`.")
-                return
-            else:
-                st.warning(f"⚠️ Tabel `{key}` tidak memiliki kolom 'Kode Risiko'.")
-def generate_tabel_data_integrasi():
-    """
-    Menggabungkan data dari copy_tabel_gabungan dan copy_risiko_update_terpilih 
-    menjadi satu tabel data integrasi berdasarkan Kode Risiko.
-    """
-    df_gabungan = st.session_state.get("copy_tabel_gabungan", pd.DataFrame())
-    df_final = st.session_state.get("copy_risiko_update_terpilih", pd.DataFrame())
-
-    if df_gabungan.empty or df_final.empty:
-        st.warning("⚠️ Data gabungan atau data final belum tersedia.")
-        return pd.DataFrame()
-
-    # Hindari kolom duplikat saat merge
-    kolom_duplikat = [col for col in df_final.columns if col in df_gabungan.columns and col != "Kode Risiko"]
-    df_gabungan_cleaned = df_gabungan.drop(columns=kolom_duplikat, errors="ignore")
-
-    # Merge kedua DataFrame
-    df_integrasi = pd.merge(
-        df_gabungan_cleaned,
-        df_final,
-        on="Kode Risiko",
-        how="left"
-    )
-
-    st.session_state["copy_tabel_data_integrasi"] = df_integrasi
-    return df_integrasi
+def buat_keterangan_risiko(row, jenis="dampak"):
+    if jenis == "dampak":
+        return justifikasi_dampak(row)
+    elif jenis == "prob":
+        return justifikasi_prob(row)
+    return "-"
 
 def main():
     st.title("📅 Monitoring & Evaluasi Risiko")
 
-   
+    bulan_saat_ini = datetime.now().month
+    tahun_saat_ini = datetime.now().year
+    nama_bulan = month_name[bulan_saat_ini]
+    st.subheader(f"Bulan Pelaporan: {nama_bulan} {tahun_saat_ini}")
 
 
-    # 📥 Upload file monitoring risiko
-    uploaded_files = st.file_uploader(
-        "Silahakan Unggah 4 file :Profil_Risiko,perlakuan_risiko,risk_based_budgeting,Residual_Dampak",
-        type=["xlsx"],
-        accept_multiple_files=True,
-        key="upload_monitoring_semua"
-    )
-
-    if uploaded_files:
-        upload_semua_file_monitoring(uploaded_files)
-        df_gabungan = gabungkan_semua_file_excel(uploaded_files)
-        if not df_gabungan.empty:
-            st.session_state["copy_tabel_gabungan"] = df_gabungan
-            st.success(f"✅ {len(df_gabungan)} risiko berhasil digabungkan (1 baris per risiko).")
-
-            with st.expander("📄 Lihat Data Gabungan Awal", expanded=False):
-                st.dataframe(df_gabungan, use_container_width=True)
-                
-    fallback_risiko_gabungan()
-    siapkan_residual_kuartalan()
+    # ✅ Inisialisasi key penting jika belum ada
+    if "copy_tabel_risiko_gabungan" not in st.session_state and "copy_tabel_gabungan" in st.session_state:
+        st.session_state["copy_tabel_risiko_gabungan"] = st.session_state["copy_tabel_gabungan"].copy()
 
     st.session_state.setdefault("copy_update_program_mitigasi", pd.DataFrame())
     st.session_state.setdefault("copy_update_kri", pd.DataFrame())
     st.session_state.setdefault("copy_summary_rbb", pd.DataFrame())
     st.session_state.setdefault("copy_tabel_residual_q1", pd.DataFrame())
 
-    st.subheader("🗓️ Pilih Bulan & Tahun Pelaporan")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        bulan_list = list(month_name)[1:]  # ['January', ..., 'December']
-        bulan_default = datetime.now().month - 1
-        bulan_pilihan = st.selectbox("Bulan Pelaporan", bulan_list, index=bulan_default, key="pilihan_bulan")
-
-    with col2:
-        tahun_saat_ini = datetime.now().year
-        tahun_range = list(range(tahun_saat_ini - 5, tahun_saat_ini + 1))
-        tahun_pilihan = st.selectbox("Tahun Pelaporan", tahun_range[::-1], key="pilihan_tahun")
-
-    # Simpan ke session_state
-    st.session_state["bulan_pelaporan"] = bulan_pilihan
-    st.session_state["tahun_pelaporan"] = tahun_pilihan
-    # 🔧 UI: Update risiko
+    # 🧩 Form update oleh user (dan user simpan manual masing-masing)
     tampilkan_update_program_mitigasi()
     tampilkan_update_kri()
     tampilkan_summary_rbb_dengan_pencapaian()
 
-    # ✅ Gabungkan semua risiko
-    df_final = generate_gabungan_risiko_final()
-    if df_final.empty:
+    # 🔁 GABUNGKAN SEMUA SETELAH USER SELESAI EDIT
+    df_final = tampilkan_gabungan_update_risiko()
+
+    if df_final is None or df_final.empty:
         st.warning("⚠️ Data gabungan tidak tersedia atau kosong.")
         return
-    st.session_state["copy_risiko_update_terpilih"] = df_final
 
-    # 🔥 Heatmap
+    # ✅ Susun kolom final
+    kolom_final = [
+        "Nomor", "Kode Risiko", "Kategori Risiko T2 & T3 KBUMN", "Kategori Dampak", "Peristiwa Risiko",
+        "Peristiwa Risiko dari Deskripsi", "Asumsi Perhitungan Dampak", "Jenis Program Dalam RKAP", "PIC",
+        "Skala Dampak BUMN", "Skala Probabilitas BUMN", "Progress Program Mitigasi (%)",
+        "Key Risk Indicators (KRI)", "Unit KRI", "KRI Saat Ini", "KRI Aman", "KRI Hati-Hati", "KRI Bahaya",
+        "Pengelolaan KRI", "Pengelolaan Mitigasi", "Skala Probabilitas Saat Ini", "Skala Probabilitas Q1",
+        "Skala Q2_Probabilitas", "Skala Q3_Probabilitas", "Skala Q4_Probabilitas",
+        "Nilai Pendapatan", "Pencapaian Pendapatan", "Nilai Biaya", "Pencapaian Biaya",
+        "Status Kinerja Biaya", "Status Kinerja Pendapatan", "% Kinerja Keuangan",
+        "Nilai Dampak", "Dampak Residual Saat Ini", "Skala Dampak Saat Ini",
+        "Skala Q4_Dampak", "Skala Q3_Dampak", "Skala Q2_Dampak", "Skala Dampak Q1"
+    ]
+
+    for kolom in kolom_final:
+        if kolom not in df_final.columns:
+            df_final[kolom] = ""
+
+    # Simpan hasil akhir ke session
+    st.session_state["copy_risiko_update_terpilih"] = df_final[kolom_final]
+
+    # 🔥 Tampilkan heatmap
     tampilkan_matriks_risiko(df_final)
-
-    # 📋 Justifikasi risiko
+    
+    # 📝 Keterangan Skala Dampak dan Skala Probabilitas (dalam bentuk tabel)
     with st.expander("📝 Tabel Keterangan Skala Dampak & Probabilitas"):
-        st.dataframe(df_final[[
-            "No", "Kode Risiko", "Peristiwa Risiko",
-            "Justifikasi Skala Dampak", "Justifikasi Skala Probabilitas"
-        ]], use_container_width=True)
+        if df_final is not None and not df_final.empty:
+            df_keterangan = pd.DataFrame({
+                "No": df_final["No"],
+                "Kode Risiko": df_final["Kode Risiko"],
+                "Peristiwa Risiko": df_final["Peristiwa Risiko"],
+                "Keterangan Skala Dampak": df_final["Keterangan Skala Dampak"],
+                "Keterangan Skala Probabilitas": df_final["Keterangan Skala Probabilitas"]
+            })
+            st.dataframe(df_keterangan, use_container_width=True)
+        else:
+            st.info("ℹ️ Data belum tersedia untuk menampilkan keterangan.")
 
-    # ✏️ Editor risiko final
+
+    # 🔍 Rekap + Profil + Editor
     st.markdown("## 🧾 Rekap Data Final")
     with st.expander("🔍 Lihat/Edit Rekap Gabungan Monitoring"):
-        editor_key = "editor_data_integrasi"
-        st.data_editor(
-            df_final,
-            use_container_width=True,
-            num_rows="dynamic",
-            key=editor_key
-        )
+        edited_df = st.data_editor(df_final, use_container_width=True, num_rows="dynamic")
 
-    # 🔗 Tabel integrasi
-    df_data_integrasi = generate_tabel_data_integrasi()
-    if not df_data_integrasi.empty:
-        st.markdown("## 🔗 Tabel Data Integrasi (Editable)")
-        editor_key_integrasi = "editor_data_integrasi_final"
-        edited_data = st.data_editor(
-            df_data_integrasi,
-            use_container_width=True,
-            num_rows="dynamic",
-            key=editor_key_integrasi
-        )
+    # Tombol update session
+    if st.button("📥 Update Rekap Gabungan"):
+        st.session_state["copy_risiko_update_terpilih"] = edited_df
+        st.success("✅ Data Rekap Gabungan diperbarui ke session.")
 
-        # Tombol update data integrasi
-        if st.button("📥 Update Data Integrasi"):
-            if isinstance(edited_data, list):
-                df_integrasi = pd.DataFrame.from_records(edited_data)
-            elif isinstance(edited_data, pd.DataFrame):
-                df_integrasi = edited_data
-            else:
-                df_integrasi = pd.DataFrame()
+    # Tombol simpan
+    if st.button("💾 Simpan Semua Data Monitoring"):
+        simpan_data_monitoring()
 
-            if not df_integrasi.empty:
-                st.session_state["copy_tabel_data_integrasi"] = df_integrasi.copy()
-                st.success("✅ Data integrasi berhasil diperbarui.")
-            else:
-                st.warning("⚠️ Data integrasi kosong atau belum diedit.")
-
-        if st.button("💾 Simpan & Unduh Monitoring Risiko"):
-            df_integrasi = st.session_state.get("copy_tabel_data_integrasi", pd.DataFrame())
-            if not df_integrasi.empty:
-                simpan_dan_unduh_data_monitoring(df_integrasi)
-            else:
-                st.warning("⚠️ Data integrasi belum tersedia untuk disimpan.")
-
-
-if __name__ == "__main__":
-    main()
-
+    # Tombol integrasi
+    if st.button("🔗 Integrasi", key="integrasi_button_rekap"):
+        simpan_integrasi_monitoring(edited_df)
