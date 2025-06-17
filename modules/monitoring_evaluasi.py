@@ -734,7 +734,7 @@ def main():
         else:
             st.info("ℹ️ Data belum tersedia.")
     with st.expander("🔧 Debug Data Monitoring (opsional)"):
-    tampilkan_debug_monitoring()
+        tampilkan_debug_monitoring()
 
     # 🧾 Rekap akhir & ekspor
     st.markdown("## 🧾 Rekap Data Final")
