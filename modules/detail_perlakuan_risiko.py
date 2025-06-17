@@ -118,7 +118,7 @@ def main():
     st.title("📆 Detail Perlakuan Risiko")
 
     # LETACS: Loader
-    uploaded_file = st.file_uploader("Unggah file Excel Perlakuan Risiko (Deskripsi, Anggaran, atau Detail Perlakuan Risiko)", type=["xlsx"])
+    uploaded_file = st.file_uploader("Silahkan Unggah file: Perlakuan Risiko ["xlsx"])
     if uploaded_file:
         try:
             xls = pd.ExcelFile(uploaded_file)
