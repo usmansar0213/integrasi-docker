@@ -619,10 +619,19 @@ def main():
     uploaded_file = st.file_uploader("Silahkan unggah 3 File: risk_based_budgeting, Profil_Risiko")
     if uploaded_file:
         xls = pd.ExcelFile(uploaded_file)
+    
         for sheet in xls.sheet_names:
             df = xls.parse(sheet)
-            st.session_state[f"copy_{sheet.lower().replace(' ', '_')}"] = df
+    
+            nama_session = sheet.lower().replace(" ", "_")
+            st.session_state[f"copy_{nama_session}"] = df
+    
+            # Secara eksplisit simpan sheet "Anggaran PIC" ke variabel yang digunakan untuk update mitigasi
+            if sheet.strip().lower() == "anggaran pic":
+                st.session_state["copy_tabel_anggaran_pic"] = df
+    
         st.success("✅ Data dari file berhasil dimuat ke session state.")
+    
 
     bulan_saat_ini = datetime.now().month
     tahun_saat_ini = datetime.now().year
