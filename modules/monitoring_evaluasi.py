@@ -627,6 +627,36 @@ def buat_keterangan_risiko(row, jenis="dampak"):
     elif jenis == "prob":
         return justifikasi_prob(row)
     return "-"
+def tampilkan_debug_monitoring():
+    st.markdown("### 🧪 Debug: Pemeriksaan Data Session State")
+
+    keys_diperlukan = {
+        "copy_tabel_risiko_gabungan": "🧾 Risiko Gabungan / Monitoring",
+        "copy_update_program_mitigasi": "🛠️ Update Program Mitigasi",
+        "copy_update_kri": "📈 Update KRI",
+        "copy_summary_rbb": "📊 Summary RBB",
+        "copy_tabel_residual_q1": "📉 Residual Q1",
+        "copy_informasi_perusahaan": "🏢 Informasi Perusahaan"
+    }
+
+    for key, label in keys_diperlukan.items():
+        df = st.session_state.get(key)
+        if isinstance(df, pd.DataFrame) and not df.empty:
+            st.success(f"✅ {label} tersedia ({key}) – {len(df)} baris")
+        else:
+            st.error(f"❌ {label} tidak tersedia atau kosong ({key})")
+
+    # Tambahan khusus untuk risiko gabungan
+    df_risiko = st.session_state.get("copy_tabel_risiko_gabungan", pd.DataFrame())
+    kolom_wajib = ["Kode Risiko", "Peristiwa Risiko", "Nilai Dampak", "Skala Dampak", "Nilai Probabilitas", "Skala Probabilitas"]
+    if not df_risiko.empty:
+        st.markdown("#### 🔍 Cek Kolom Risiko Gabungan")
+        missing_cols = [kol for kol in kolom_wajib if kol not in df_risiko.columns]
+        if missing_cols:
+            st.warning(f"⚠️ Kolom wajib hilang dari risiko gabungan: {missing_cols}")
+        else:
+            st.success("✅ Semua kolom wajib tersedia di risiko gabungan.")
+        st.dataframe(df_risiko.head(), use_container_width=True)
 
 def main():
     st.title("📅 Monitoring & Evaluasi Risiko")
@@ -703,6 +733,8 @@ def main():
             st.dataframe(df_keterangan, use_container_width=True)
         else:
             st.info("ℹ️ Data belum tersedia.")
+    with st.expander("🔧 Debug Data Monitoring (opsional)"):
+    tampilkan_debug_monitoring()
 
     # 🧾 Rekap akhir & ekspor
     st.markdown("## 🧾 Rekap Data Final")
@@ -721,3 +753,4 @@ def main():
 
     # 🏢 Tambahkan editor profil perusahaan dan rekap gabungan
     tampilkan_rekap_gabungan_update_risiko_dengan_profil_interaktif(df_final)
+    
