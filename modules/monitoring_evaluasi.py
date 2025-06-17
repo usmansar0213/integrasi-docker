@@ -633,24 +633,34 @@ def gabungkan_file_excel_dari_uploader(uploaded_files):
 
     return df_gabungan
 
+import streamlit as st
+import pandas as pd
+from datetime import datetime
+from io import BytesIO
 
+# Pastikan fungsi-fungsi ini sudah tersedia di file yang sama:
+# - gabungkan_file_excel_dari_uploader()
+# - tampilkan_gabungan_update_risiko()
+# - hitung_residual_saat_ini()
 
 def main():
     st.title("📅 Monitoring & Evaluasi Risiko")
 
-    # --- Upload File ---
-    uploaded_files = st.file_uploader("📤 Upload semua file monitoring", type=["xlsx"], accept_multiple_files=True, key="upload_monitoring_semua")
+    # --- Upload Multi-File ---
+    uploaded_files = st.file_uploader("📤 Upload file monitoring (.xlsx)", type=["xlsx"], accept_multiple_files=True, key="upload_monitoring_semua")
     if uploaded_files:
         df_gabungan = gabungkan_file_excel_dari_uploader(uploaded_files)
         if not df_gabungan.empty:
             st.session_state["copy_tabel_risiko_gabungan"] = df_gabungan
 
-    # --- Debug Session ---
+    # --- Debug Session State ---
     with st.expander("🧪 Debug: Pemeriksaan Data Session State", expanded=True):
         def cek_data(key):
             df = st.session_state.get(key, pd.DataFrame())
-            return f"{'✅' if not df.empty else '❌'} `{key}` – {len(df)} baris" if not df.empty else f"❌ `{key}` tidak tersedia atau kosong"
-        
+            if isinstance(df, pd.DataFrame) and not df.empty:
+                return f"✅ {key} – {len(df)} baris"
+            else:
+                return f"❌ {key} tidak tersedia atau kosong"
         st.markdown("\n".join([
             cek_data("copy_tabel_risiko_gabungan"),
             cek_data("copy_update_program_mitigasi"),
@@ -661,7 +671,7 @@ def main():
             cek_data("copy_residual_prob")
         ]))
 
-    # --- Tampilkan Gabungan & Hitung Residual ---
+    # --- Proses Gabungan dan Residual ---
     if st.session_state.get("copy_tabel_risiko_gabungan", pd.DataFrame()).empty:
         st.warning("⚠️ Data gabungan tidak tersedia atau kosong.")
         return
@@ -670,15 +680,14 @@ def main():
 
     if not df_final.empty:
         st.subheader("📊 Tabel Gabungan Risiko + Residual Saat Ini")
-        st.dataframe(df_final)
+        st.dataframe(df_final, use_container_width=True)
 
-        # Tambahkan tombol ekspor jika diinginkan
+        # --- Ekspor Hasil Gabungan ---
         with st.expander("⬇️ Ekspor Hasil Gabungan"):
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
             filename = f"hasil_monitoring_residual_{timestamp}.xlsx"
-            buffer = pd.ExcelWriter(filename, engine='xlsxwriter')
-            df_final.to_excel(buffer, index=False, sheet_name="Monitoring")
-            buffer.close()
-            with open(filename, "rb") as f:
-                st.download_button("📥 Unduh Excel", data=f, file_name=filename)
+            towrite = BytesIO()
+            df_final.to_excel(towrite, index=False, sheet_name="Monitoring")
+            towrite.seek(0)
+            st.download_button("📥 Unduh Excel", data=towrite, file_name=filename)
 
