@@ -23,7 +23,7 @@ def identifikasi_jenis_file(sheet_names):
 
 # Fungsi utama
 def load_data_rbb_dari_file():
-    with st.expander("📥 Upload Semua File (Profil, Strategi, Residual, Mitigasi, atau File Ekspor)", expanded=True):
+    with st.expander("📥 Silakan Upload:  Profil_Perusahaan, perlakuan_risiko,Residual_Dampak,)", expanded=True):
         uploaded_files = st.file_uploader("Unggah hingga 4-5 file Excel", type=["xlsx"], accept_multiple_files=True)
 
         if not uploaded_files:
