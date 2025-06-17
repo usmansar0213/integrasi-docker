@@ -5,7 +5,8 @@ import re
 from datetime import datetime
 import io
 
-def gabungkan_file_excel_dari_uploader(uploaded_files):
+# -------------------- Gabungkan file Excel dari uploader --------------------
+def gabungkan_file_excel(uploaded_files):
     df_gabungan = pd.DataFrame()
     daftar_sheet = {}
     perusahaan_terdeteksi = set()
@@ -35,49 +36,7 @@ def gabungkan_file_excel_dari_uploader(uploaded_files):
 
     return df_gabungan, daftar_sheet, perusahaan_terdeteksi
 
-
-# -------------------- Load file Excel dari folder --------------------
-def load_files_dari_folder(folder_sumber):
-    if not os.path.exists(folder_sumber):
-        st.error(f"❌ Folder sumber tidak ditemukan: `{folder_sumber}`")
-        return []
-    return sorted([
-        f for f in os.listdir(folder_sumber)
-        if f.endswith(".xlsx") and not f.startswith("~$")
-    ])
-
-
-# -------------------- Gabungkan semua file Excel --------------------
-def gabungkan_file_excel(folder_sumber, semua_file):
-    df_gabungan = pd.DataFrame()
-    daftar_sheet = {}
-    perusahaan_terdeteksi = set()
-    progress_bar = st.progress(0, text="⏳ Menggabungkan data...")
-
-    for i, file in enumerate(semua_file):
-        try:
-            file_path = os.path.join(folder_sumber, file)
-            df_excel = pd.read_excel(file_path, sheet_name=None)
-
-            for sheetname, df_sheet in df_excel.items():
-                df_sheet = df_sheet.copy()
-                if {"Kode Risiko", "Kode Perusahaan"}.issubset(df_sheet.columns):
-                    df_sheet["Nama File"] = file
-                    df_sheet["Sheet"] = sheetname
-                    perusahaan_terdeteksi.update(df_sheet["Kode Perusahaan"].dropna().unique())
-                    df_gabungan = pd.concat([df_gabungan, df_sheet], ignore_index=True)
-
-                    if sheetname not in daftar_sheet:
-                        daftar_sheet[sheetname] = df_sheet
-                    else:
-                        daftar_sheet[sheetname] = pd.concat([daftar_sheet[sheetname], df_sheet], ignore_index=True)
-        except Exception as e:
-            st.error(f"❌ Gagal membaca file `{file}`: {e}")
-
-        progress_bar.progress((i + 1) / len(semua_file), text=f"📄 Memproses: {file}")
-
-    return df_gabungan, daftar_sheet, perusahaan_terdeteksi
-
+# -------------------- Normalisasi Nama Bulan --------------------
 def normalisasi_bulan(bulan_input):
     mapping = {
         "januari": "january", "februari": "february", "maret": "march",
@@ -90,11 +49,8 @@ def normalisasi_bulan(bulan_input):
 # -------------------- Pecah Nama File --------------------
 def pecah_nama_file(nama_file):
     nama_file = os.path.splitext(os.path.basename(nama_file))[0]
-
-    # Pola baru: risk_monitoring__PERUSAHAAN_DIVISI_DEPARTEMEN_BULAN_TAHUN
     pattern = r"risk_monitoring__([A-Z0-9]+)_[A-Z0-9]+_[A-Z0-9]+_([A-Za-z]+)_([0-9]{4})"
     match = re.match(pattern, nama_file, re.IGNORECASE)
-
     if match:
         return {
             "perusahaan": match.group(1).upper(),
@@ -103,8 +59,7 @@ def pecah_nama_file(nama_file):
         }
     return None
 
-
-# -------------------- Tampilkan Tabel Pecahan Nama File --------------------
+# -------------------- Tampilkan Tabel Rekap Nama File --------------------
 def tampilkan_tabel_pecahan_nama_file(semua_file):
     data = []
     for file in semua_file:
@@ -118,7 +73,6 @@ def tampilkan_tabel_pecahan_nama_file(semua_file):
         st.dataframe(pd.DataFrame(data))
     else:
         st.info("Tidak ada file yang sesuai format penamaan integrasi.")
-
 
 # -------------------- Cek Perusahaan Belum Kirim --------------------
 def cek_perusahaan_tanpa_file(semua_file, daftar_perusahaan, bulan, tahun):
@@ -154,8 +108,21 @@ def cek_perusahaan_tidak_terdaftar(df_gabungan, daftar_perusahaan):
         st.write(perusahaan_tidak_terdaftar)
     else:
         st.success("✅ Tidak ditemukan perusahaan di luar daftar yang kamu inputkan.")
+
+# -------------------- Fungsi Utama --------------------
 def main():
     st.header("🧩 Modul Integrasi Data")
+
+    uploaded_files = st.file_uploader(
+        "📤 Unggah file Excel integrasi (.xlsx) – wajib diisi",
+        type=["xlsx"],
+        accept_multiple_files=True,
+        key="upload_file_integrasi"
+    )
+
+    if not uploaded_files:
+        st.warning("📤 Silakan unggah minimal 1 file Excel untuk melanjutkan analisis.")
+        return
 
     daftar_perusahaan = [
         kode.strip().upper()
@@ -173,25 +140,8 @@ def main():
 
     tahun = st.text_input("📆 Tahun", value=str(datetime.now().year))
 
-    uploaded_files = st.file_uploader(
-        "📤 Unggah file Excel integrasi (.xlsx) (opsional, jika tidak akan ambil dari folder)",
-        type=["xlsx"],
-        accept_multiple_files=True
-    )
-
-    if uploaded_files:
-        semua_file_names = [f.name for f in uploaded_files]
-        df_gabungan, daftar_sheet, perusahaan_terdeteksi = gabungkan_file_excel_dari_uploader(uploaded_files)
-    else:
-        folder_sumber = "/app/data_integrasi"
-        semua_file = load_files_dari_folder(folder_sumber)
-
-        if not semua_file:
-            st.warning("📂 Tidak ada file ditemukan di folder `/app/data_integrasi`. Harap unggah file atau pastikan folder terisi.")
-            return
-
-        semua_file_names = semua_file
-        df_gabungan, daftar_sheet, perusahaan_terdeteksi = gabungkan_file_excel(folder_sumber, semua_file)
+    semua_file_names = [f.name for f in uploaded_files]
+    df_gabungan, daftar_sheet, perusahaan_terdeteksi = gabungkan_file_excel(uploaded_files)
 
     # Simpan hasil integrasi ke memory (BytesIO)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -220,7 +170,6 @@ def main():
     cek_perusahaan_tanpa_file(semua_file_names, daftar_perusahaan, bulan, tahun)
     cek_perusahaan_tidak_terdaftar(df_gabungan, daftar_perusahaan)
 
+# -------------------- Jalankan Aplikasi --------------------
 if __name__ == "__main__":
     main()
-
-
