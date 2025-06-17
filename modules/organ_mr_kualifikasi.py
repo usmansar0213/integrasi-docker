@@ -465,10 +465,27 @@ def cek_kepatuhan_kualifikasi(df_kualifikasi: pd.DataFrame):
     df_hasil = pd.DataFrame(hasil_evaluasi)
     st.dataframe(df_hasil, use_container_width=True)
 
-
 def main():
     try:
         st.title("📘 Organ & Kualifikasi")
+
+        # ======================= Upload Manual File Kualifikasi =======================
+        st.markdown("### 📂 Upload File Kualifikasi Organ (opsional)")
+
+        uploaded_file = st.file_uploader(
+            "Unggah file Excel kualifikasi organ (.xlsx)",
+            type=["xlsx"],
+            key="upload_kualifikasi_file"
+        )
+
+        if uploaded_file is not None:
+            try:
+                df_uploaded = pd.read_excel(uploaded_file)
+                st.session_state["data_kualifikasi"] = df_uploaded
+                st.success(f"✅ File '{uploaded_file.name}' berhasil dimuat.")
+            except Exception as e:
+                st.error(f"❌ Gagal membaca file: {e}")
+                
         st.markdown("Petunjuk berdasarkan *SK-3/DKU.MBU/05/2023* – Kementerian BUMN")
 
         # ✅ Tampilkan Expander Regulasi
