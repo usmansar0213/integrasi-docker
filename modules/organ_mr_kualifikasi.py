@@ -467,24 +467,83 @@ def cek_kepatuhan_kualifikasi(df_kualifikasi: pd.DataFrame):
 
 
 def main():
-    
-    st.markdown("Petunjuk berdasarkan *SK-3/DKU.MBU/05/2023* – Kementerian BUMN")
+    try:
+        st.title("📘 Organ & Kualifikasi")
+        st.markdown("Petunjuk berdasarkan *SK-3/DKU.MBU/05/2023* – Kementerian BUMN")
 
-    st.markdown("---")  # 🔻 PEMISAH antar bagian
+        # ✅ Tampilkan Expander Regulasi
+        with st.expander("📘 Acuan Regulasi: Organ Pengelola Risiko", expanded=False):
+            st.markdown("""
+            **SK-3/DKU.MBU/05/2023** adalah Petunjuk Teknis (Juknis) yang ditetapkan oleh **Deputi Keuangan dan Manajemen Risiko Kementerian BUMN** untuk mengatur **komposisi dan kualifikasi** Organ Pengelola Risiko di lingkungan BUMN dan Anak Perusahaan.
 
-    modul_pendaftaran_organ()
-    
-    modul_data_kualifikasi_langsung()
+            ### 🧾 Dasar Hukum
+            - **PER-2/MBU/03/2023** tentang Tata Kelola & Kegiatan Korporasi Signifikan
+            - Berlaku sejak **26 Mei 2023**
+            - Mengacu pada prinsip **Three Lines of Defense**:
+                - **Lini 1:** Unit Pemilik Risiko (Owner Risiko)
+                - **Lini 2:** Fungsi Risiko & Kepatuhan (Pengawasan Risiko)
+                - **Lini 3:** Audit Internal / SPI (Penjaminan & Evaluasi)
 
-    st.markdown("---")  # 🔻 PEMISAH antar bagian
+            ### 🏛 Organ Pengelola Risiko & Tanggung Jawab
+            1. **Dewan Komisaris / Dewan Pengawas**  
+               🔹 Mengawasi penerapan manajemen risiko & memberikan arahan.  
+            2. **Direksi**  
+               🔹 Bertanggung jawab atas kebijakan risiko dan pelaksanaannya.  
+            3. **Komite Audit**  
+               🔹 Memastikan efektivitas pengendalian internal & laporan keuangan.  
+            4. **Komite Pemantau Risiko**  
+               🔹 Memantau kebijakan risiko & memberi rekomendasi mitigasi.  
+            5. **Komite Tata Kelola Terintegrasi**  
+               🔹 Menjamin tata kelola terintegrasi dalam BUMN konglomerasi.  
+            6. **Direktur Risiko**  
+               🔹 Menyusun kebijakan & metodologi manajemen risiko.  
+            7. **Direktur Keuangan**  
+               🔹 Mengelola risiko keuangan secara terukur dan bertanggung jawab.  
+            8. **SPI (Satuan Pengawasan Intern)**  
+               🔹 Melakukan audit internal untuk memastikan efektivitas pengendalian & pengelolaan risiko.
 
-    st.subheader("🔎 Cek Pemenuhan")
-    with st.expander("🔎 Cek Organ Belum Lapor Kualifikasi", expanded=False):
-        cek_organ_belum_lapor_kualifikasi()
+            > 📌 Setiap organ wajib memenuhi **kualifikasi pelatihan dan sertifikasi profesional** sesuai perannya.
+            """)
 
-    if "data_kualifikasi" in st.session_state:
-        with st.expander("🔎 Evaluasi Kepatuhan Kualifikasi", expanded=False):
-            cek_kepatuhan_kualifikasi(st.session_state["data_kualifikasi"])
+        # ✅ Pilihan jenis organ dan kualifikasi
+        pilihan = st.selectbox("🔍 Pilih Jenis Organ Pengelola Risiko:", [
+            "Dewan Komisaris",
+            "Direksi",
+            "Direktur Keuangan",
+            "Direktur Risiko",
+            "Unit Risiko",
+            "Komite Audit",
+            "Komite Pemantau Risiko",
+            "Komite Tata Kelola",
+            "SPI",
+            "Unit Pemilik Risiko"
+        ])
+
+        hasil = cari_kualifikasi_organ_pengelola(pilihan)
+        st.markdown(hasil)
+
+        st.markdown("---")
+
+        # ✅ Modul input data organ
+        modul_pendaftaran_organ()
+
+        # ✅ Modul input data kualifikasi
+        modul_data_kualifikasi_langsung()
+
+        st.markdown("---")
+
+        # ✅ Cek Organ yang Belum Melapor
+        st.subheader("🔎 Cek Pemenuhan")
+        with st.expander("🔎 Cek Organ Belum Lapor Kualifikasi", expanded=False):
+            cek_organ_belum_lapor_kualifikasi()
+
+        # ✅ Evaluasi Kualifikasi jika data tersedia
+        if "data_kualifikasi" in st.session_state and not st.session_state["data_kualifikasi"].empty:
+            with st.expander("🔎 Evaluasi Kepatuhan Kualifikasi", expanded=False):
+                cek_kepatuhan_kualifikasi(st.session_state["data_kualifikasi"])
+
+    except Exception as e:
+        st.error(f"❌ Terjadi error: {e}")
 
 
 if __name__ == "__main__":
