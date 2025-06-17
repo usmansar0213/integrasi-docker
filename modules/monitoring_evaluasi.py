@@ -616,7 +616,7 @@ def main():
     st.title("📅 Monitoring & Evaluasi Risiko")
 
     # Tambahkan uploader (opsional)
-    uploaded_file = st.file_uploader("Silahkan unggah 3 File: risk_based_budgeting, Profil_Risiko)
+    uploaded_file = st.file_uploader("Silahkan unggah 3 File: risk_based_budgeting, Profil_Risiko")
     if uploaded_file:
         xls = pd.ExcelFile(uploaded_file)
         for sheet in xls.sheet_names:
