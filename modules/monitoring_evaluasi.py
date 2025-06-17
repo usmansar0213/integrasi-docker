@@ -589,101 +589,99 @@ def hitung_residual_saat_ini(
     df["Skala Probabilitas Saat Ini"] = df.apply(hitung_prob, axis=1)
     df["Skala Dampak Saat Ini"] = df.apply(hitung_dampak, axis=1)
     return df
+import streamlit as st
+import pandas as pd
+
+def gabungkan_file_excel_dari_uploader(uploaded_files):
+    df_gabungan = pd.DataFrame()
+    perusahaan_terdeteksi = set()
+    jumlah_file_valid = 0
+
+    if not uploaded_files:
+        st.warning("⚠️ Belum ada file yang diunggah.")
+        return pd.DataFrame()
+
+    progress_bar = st.progress(0, text="⏳ Menggabungkan data...")
+
+    for i, uploaded_file in enumerate(uploaded_files):
+        try:
+            file_name = uploaded_file.name
+            xls = pd.ExcelFile(uploaded_file)
+            sheet_dict = xls.sheet_names
+
+            for sheet_name in sheet_dict:
+                df_sheet = xls.parse(sheet_name)
+                if {"Kode Risiko", "Kode Perusahaan"}.issubset(df_sheet.columns):
+                    df_sheet = df_sheet.copy()
+                    df_sheet["Nama File"] = file_name
+                    df_sheet["Sheet"] = sheet_name
+                    perusahaan_terdeteksi.update(df_sheet["Kode Perusahaan"].dropna().unique())
+                    df_gabungan = pd.concat([df_gabungan, df_sheet], ignore_index=True)
+                    jumlah_file_valid += 1
+
+            progress_bar.progress((i + 1) / len(uploaded_files), text=f"📄 Memproses {file_name}")
+        except Exception as e:
+            st.warning(f"⚠️ Gagal membaca file `{uploaded_file.name}`: {e}")
+
+    progress_bar.empty()
+
+    if df_gabungan.empty:
+        st.error("⚠️ Tidak ditemukan data yang memiliki kolom 'Kode Risiko' dan 'Kode Perusahaan'.")
+    else:
+        st.success(f"✅ Berhasil menggabungkan {jumlah_file_valid} file. Total {len(df_gabungan)} baris.")
+        st.session_state["copy_tabel_risiko_gabungan"] = df_gabungan
+
+    return df_gabungan
+
+import streamlit as st
+import pandas as pd
+from datetime import datetime
+from modules.utils import hitung_residual_saat_ini, tampilkan_gabungan_update_risiko, gabungkan_file_excel_dari_uploader
 
 def main():
     st.title("📅 Monitoring & Evaluasi Risiko")
 
-    # 📥 Multi-file uploader
-    uploaded_files = st.file_uploader(
-        "📥 Silakan unggah 3 file: Perlakuan Risiko, Profil Risiko, Risk-Based Budgeting",
-        type=["xlsx"],
-        accept_multiple_files=True
-    )
-
+    # --- Upload File ---
+    uploaded_files = st.file_uploader("📤 Upload semua file monitoring", type=["xlsx"], accept_multiple_files=True, key="upload_monitoring_semua")
     if uploaded_files:
-        for uploaded_file in uploaded_files:
-            xls = pd.ExcelFile(uploaded_file)
-            for sheet in xls.sheet_names:
-                df = xls.parse(sheet)
-                nama_session = sheet.lower().strip().replace(" ", "_")
-                st.session_state[f"copy_{nama_session}"] = df
+        df_gabungan = gabungkan_file_excel_dari_uploader(uploaded_files)
+        if not df_gabungan.empty:
+            st.session_state["copy_tabel_risiko_gabungan"] = df_gabungan
 
-                if "anggaran pic" in sheet.lower():
-                    st.session_state["copy_tabel_anggaran_pic"] = df
-                elif "risiko gabungan" in sheet.lower() or "monitoring" in sheet.lower():
-                    st.session_state["copy_tabel_risiko_gabungan"] = df
-                elif "informasi perusahaan" in sheet.lower():
-                    st.session_state["copy_informasi_perusahaan"] = df
+    # --- Debug Session ---
+    with st.expander("🧪 Debug: Pemeriksaan Data Session State", expanded=True):
+        def cek_data(key):
+            df = st.session_state.get(key, pd.DataFrame())
+            return f"{'✅' if not df.empty else '❌'} `{key}` – {len(df)} baris" if not df.empty else f"❌ `{key}` tidak tersedia atau kosong"
+        
+        st.markdown("\n".join([
+            cek_data("copy_tabel_risiko_gabungan"),
+            cek_data("copy_update_program_mitigasi"),
+            cek_data("copy_update_kri"),
+            cek_data("copy_summary_rbb"),
+            cek_data("copy_informasi_perusahaan"),
+            cek_data("copy_residual_dampak"),
+            cek_data("copy_residual_prob")
+        ]))
 
-        st.success("✅ File berhasil dimuat ke session state.")
-
-    # 🗓️ Bulan dan tahun pelaporan
-    bulan_saat_ini = datetime.now().month
-    tahun_saat_ini = datetime.now().year
-    nama_bulan = month_name[bulan_saat_ini]
-    st.subheader(f"Bulan Pelaporan: {nama_bulan} {tahun_saat_ini}")
-
-    # 🧩 Inisialisasi session state kosong jika belum ada
-    for key in [
-        "copy_tabel_risiko_gabungan",
-        "copy_update_program_mitigasi",
-        "copy_update_kri",
-        "copy_summary_rbb",
-        "copy_tabel_residual_q1",
-        "copy_informasi_perusahaan"
-    ]:
-        st.session_state.setdefault(key, pd.DataFrame())
-
-    # 🧠 Update user input
-    tampilkan_update_program_mitigasi()
-    tampilkan_update_kri()
-    tampilkan_summary_rbb_dengan_pencapaian()
-
-    # 🔁 Gabungan dan analisis
-    df_final = tampilkan_gabungan_update_risiko()
-
-    # 🔧 Debug ditampilkan SELALU, meskipun df_final kosong
-    with st.expander("🔧 Debug Data Monitoring (opsional)"):
-        tampilkan_debug_monitoring()
-
-    # ❌ Jika data masih kosong, hentikan proses analisis
-    if df_final is None or df_final.empty:
+    # --- Tampilkan Gabungan & Hitung Residual ---
+    if st.session_state.get("copy_tabel_risiko_gabungan", pd.DataFrame()).empty:
         st.warning("⚠️ Data gabungan tidak tersedia atau kosong.")
         return
 
-    # ✅ Simpan hasil analisis
-    st.session_state["copy_risiko_update_terpilih"] = df_final
+    df_final = tampilkan_gabungan_update_risiko()
 
-    # 🔥 Visualisasi heatmap
-    tampilkan_matriks_risiko(df_final)
+    if not df_final.empty:
+        st.subheader("📊 Tabel Gabungan Risiko + Residual Saat Ini")
+        st.dataframe(df_final)
 
-    # 📝 Keterangan risiko
-    with st.expander("📝 Tabel Keterangan Skala Dampak & Probabilitas"):
-        if not df_final.empty:
-            df_keterangan = pd.DataFrame({
-                "Kode Risiko": df_final["Kode Risiko"],
-                "Peristiwa Risiko": df_final["Peristiwa Risiko"],
-                "Keterangan Skala Dampak": df_final["Keterangan Skala Dampak"],
-                "Keterangan Skala Probabilitas": df_final["Keterangan Skala Probabilitas"]
-            })
-            st.dataframe(df_keterangan, use_container_width=True)
-        else:
-            st.info("ℹ️ Data belum tersedia.")
+        # Tambahkan tombol ekspor jika diinginkan
+        with st.expander("⬇️ Ekspor Hasil Gabungan"):
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            filename = f"hasil_monitoring_residual_{timestamp}.xlsx"
+            buffer = pd.ExcelWriter(filename, engine='xlsxwriter')
+            df_final.to_excel(buffer, index=False, sheet_name="Monitoring")
+            buffer.close()
+            with open(filename, "rb") as f:
+                st.download_button("📥 Unduh Excel", data=f, file_name=filename)
 
-    # 🧾 Rekap akhir & ekspor
-    st.markdown("## 🧾 Rekap Data Final")
-    with st.expander("🔍 Lihat/Edit Rekap Gabungan Monitoring"):
-        edited_df = st.data_editor(df_final, use_container_width=True, num_rows="dynamic")
-
-    if st.button("📥 Update Rekap Gabungan"):
-        st.session_state["copy_risiko_update_terpilih"] = edited_df
-        st.success("✅ Data Rekap Gabungan diperbarui ke session.")
-
-    if st.button("💾 Simpan Semua Data Monitoring"):
-        simpan_data_monitoring()
-
-    if st.button("🔗 Integrasi", key="integrasi_button_rekap"):
-        simpan_integrasi_monitoring(edited_df)
-
-    # 🏢 Tambahkan editor profil perusahaan dan rekap gabungan
-    tampilkan_rekap_gabungan_update_risiko_dengan_profil_interaktif(df_final)
