@@ -465,15 +465,17 @@ def main():
 
     st.title("📌 Profil Risiko")
 
-    # 🔵 Satu uploader untuk semua
-    uploaded_file = st.file_uploader(
-    "📥 Silakan unggah **file Strategi Risiko** (.xlsx)",
-    type=["xlsx"],
-    accept_multiple_files=True,
-    key="file_uploader_multi")
+    # 🔵 Uploader untuk banyak file (Strategi & Profil Risiko)
+    uploaded_files = st.file_uploader(
+        "📥 Silakan unggah file **Strategi Risiko** dan/atau **Profil Risiko** (.xlsx)", 
+        type=["xlsx"], 
+        accept_multiple_files=True,
+        key="file_uploader_multi"
+    )
 
-    if uploaded_file:
-        load_uploaded_file_flexible(uploaded_file)
+    if uploaded_files:
+        for uploaded_file in uploaded_files:
+            load_uploaded_file_flexible(uploaded_file)
 
     # 🔵 Ambil data sasaran strategi bisnis
     data = st.session_state.get("copy_sasaran_strategi_bisnis", pd.DataFrame())
@@ -507,45 +509,36 @@ def main():
     else:
         st.warning("Tidak ada opsi risiko yang dipilih.")
 
+    # Minta saran detail dari GPT
     if st.button("Minta Saran Detail Risiko dari GPT"):
         raw_text = get_risk_details_from_gpt()
         if isinstance(raw_text, pd.DataFrame) and not raw_text.empty:
             hasil_df = parse_gpt_output(raw_text)
+            st.session_state["copy_risk_details"] = hasil_df
         else:
             st.warning("Data dari GPT kosong atau tidak valid.")
 
-    # **Debugging: Cek apakah data risiko telah tersimpan di session state**
+    # Menampilkan editor untuk detail risiko
     if (
         "copy_risk_details" in st.session_state
         and isinstance(st.session_state["copy_risk_details"], pd.DataFrame)
         and not st.session_state["copy_risk_details"].empty
     ):
-        st.subheader("Detail Risiko -silahkan edit disini")
+        st.subheader("Detail Risiko - silakan edit di sini")
 
-        # Salin dan filter duplikat berdasarkan kombinasi unik
         df_risk_details = st.session_state["copy_risk_details"].copy()
         df_risk_details = df_risk_details.drop_duplicates(subset=["Kode Risiko", "Peristiwa Risiko"])
         df_risk_details = df_risk_details.reset_index(drop=True)
-        if "No" not in df_risk_details.columns:
-            df_risk_details.insert(0, "No", df_risk_details.index + 1)
-        else:
-            df_risk_details["No"] = df_risk_details.index + 1
-
+        df_risk_details["No"] = df_risk_details.index + 1
 
         updated_df = st.data_editor(df_risk_details, num_rows="dynamic", key="risk_details_editor")
 
         # 🔥 Tombol Update + Split + Save + Download
         if st.button("💾 Update Data"):
-            # ✅ Update session state
             st.session_state["copy_update_risk_details"] = updated_df
-
-            # ✅ Otomatis split ke 3 tabel
             split_copy_risk_details()
-
-            # ✅ Save ke server + Download
             daftar_tabel = ["update_risk_details", "deskripsi_risiko", "key_risk_indicator", "control_dampak"]
-            kode_perusahaan = "PLND"  # Ini bisa kamu otomatis ambil kalau mau
+            kode_perusahaan = "PLND"
             save_and_download_profil_risiko(daftar_tabel, kode_perusahaan)
-
     else:
         st.warning("📌 Belum ada data risiko untuk diedit.")
