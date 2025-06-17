@@ -384,7 +384,7 @@ def main():
     st.title("📊 Sasaran Strategi Bisnis")
 
     # Tombol Muat Data dari File
-    uploaded_file = st.file_uploader(BTN_LOAD_LABEL, type=["xlsx"], label_visibility="collapsed")
+    uploaded_file = st.file_uploader("📥 Silahkan Load file Profil Perusahaan", type=["xls", "xlsx"], key="data_uploader")
     if uploaded_file is not None:
         load_all_data_from_file(uploaded_file)
 
