@@ -595,53 +595,42 @@ import pandas as pd
 def gabungkan_file_excel_dari_uploader(uploaded_files):
     df_gabungan = pd.DataFrame()
     perusahaan_terdeteksi = set()
-    jumlah_file_valid = 0
-
-    if not uploaded_files:
-        st.warning("⚠️ Belum ada file yang diunggah.")
-        return pd.DataFrame()
+    daftar_sheet = {}
 
     progress_bar = st.progress(0, text="⏳ Menggabungkan data...")
 
     for i, uploaded_file in enumerate(uploaded_files):
         try:
             file_name = uploaded_file.name
-            xls = pd.ExcelFile(uploaded_file)
-            sheet_dict = xls.sheet_names
+            df_excel = pd.read_excel(uploaded_file, sheet_name=None)
 
-            for sheet_name in sheet_dict:
-                df_sheet = xls.parse(sheet_name)
+            for sheetname, df_sheet in df_excel.items():
+                df_sheet = df_sheet.copy()
+
                 if {"Kode Risiko", "Kode Perusahaan"}.issubset(df_sheet.columns):
-                    df_sheet = df_sheet.copy()
                     df_sheet["Nama File"] = file_name
-                    df_sheet["Sheet"] = sheet_name
-                    perusahaan_terdeteksi.update(df_sheet["Kode Perusahaan"].dropna().unique())
+                    df_sheet["Sheet"] = sheetname
                     df_gabungan = pd.concat([df_gabungan, df_sheet], ignore_index=True)
-                    jumlah_file_valid += 1
-
-            progress_bar.progress((i + 1) / len(uploaded_files), text=f"📄 Memproses {file_name}")
+                    perusahaan_terdeteksi.update(df_sheet["Kode Perusahaan"].dropna().unique())
+                    daftar_sheet.setdefault(file_name, []).append(sheetname)
+                else:
+                    st.warning(
+                        f"⚠️ Sheet **'{sheetname}'** di file **'{file_name}'** "
+                        f"tidak memiliki kolom lengkap 'Kode Risiko' dan 'Kode Perusahaan'.\n"
+                        f"Kolom yang ditemukan: `{list(df_sheet.columns)}`"
+                    )
         except Exception as e:
-            st.warning(f"⚠️ Gagal membaca file `{uploaded_file.name}`: {e}")
+            st.error(f"❌ Gagal membaca file '{uploaded_file.name}': {e}")
 
-    progress_bar.empty()
+        progress_bar.progress((i + 1) / len(uploaded_files), text=f"📦 Memuat {i+1}/{len(uploaded_files)} file...")
 
     if df_gabungan.empty:
         st.error("⚠️ Tidak ditemukan data yang memiliki kolom 'Kode Risiko' dan 'Kode Perusahaan'.")
     else:
-        st.success(f"✅ Berhasil menggabungkan {jumlah_file_valid} file. Total {len(df_gabungan)} baris.")
+        st.success(f"✅ Berhasil digabungkan: {len(df_gabungan)} baris dari {len(uploaded_files)} file")
         st.session_state["copy_tabel_risiko_gabungan"] = df_gabungan
 
     return df_gabungan
-
-import streamlit as st
-import pandas as pd
-from datetime import datetime
-from io import BytesIO
-
-# Pastikan fungsi-fungsi ini sudah tersedia di file yang sama:
-# - gabungkan_file_excel_dari_uploader()
-# - tampilkan_gabungan_update_risiko()
-# - hitung_residual_saat_ini()
 
 def main():
     st.title("📅 Monitoring & Evaluasi Risiko")
