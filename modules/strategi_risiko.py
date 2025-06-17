@@ -372,7 +372,7 @@ def main():
     st.title("📊 Strategi Risiko - Upload & Analisa Data")
 
     # --- Upload file Excel (Profil Perusahaan & Strategi Risiko) dulu ---
-    uploaded_file = st.file_uploader("📥 Pilih file Excel", type=["xls", "xlsx"], key="data_uploader")
+    uploaded_file = st.file_uploader("📥 Silahkan Load file Profil Perusahaan", type=["xls", "xlsx"], key="data_uploader")
 
     # --- Inisialisasi default session state ---
     st.session_state.setdefault("ambang_batas", pd.DataFrame(columns=["Ambang Batas", "Nilai"]))
