@@ -615,23 +615,30 @@ def buat_keterangan_risiko(row, jenis="dampak"):
 def main():
     st.title("📅 Monitoring & Evaluasi Risiko")
 
-    # 📥 Uploader untuk file Excel
-    uploaded_file = st.file_uploader("Silahkan unggah 3 file: Perlakuan risiko,  profil risiko, risk-based budgeting", type=["xlsx"])
+    # 📥 Multi-file uploader
+    uploaded_files = st.file_uploader(
+        "📥 Silakan unggah file Excel (boleh lebih dari 1): Perlakuan Risiko, Profil Risiko, RBB, dll",
+        type=["xlsx"],
+        accept_multiple_files=True
+    )
 
-    if uploaded_file:
-        xls = pd.ExcelFile(uploaded_file)
-    
-        for sheet in xls.sheet_names:
-            df = xls.parse(sheet)
-            nama_session = sheet.lower().replace(" ", "_")
-            st.session_state[f"copy_{nama_session}"] = df
-    
-            if sheet.strip().lower() == "anggaran pic":
-                st.session_state["copy_tabel_anggaran_pic"] = df
-    
-            elif "risiko gabungan" in sheet.lower() or "monitoring" in sheet.lower():
-                st.session_state["copy_tabel_risiko_gabungan"] = df
-    
+    if uploaded_files:
+        for uploaded_file in uploaded_files:
+            xls = pd.ExcelFile(uploaded_file)
+            for sheet in xls.sheet_names:
+                df = xls.parse(sheet)
+                nama_session = sheet.lower().strip().replace(" ", "_")
+                st.session_state[f"copy_{nama_session}"] = df
+
+                if "anggaran pic" in sheet.lower():
+                    st.session_state["copy_tabel_anggaran_pic"] = df
+
+                elif "risiko gabungan" in sheet.lower() or "monitoring" in sheet.lower():
+                    st.session_state["copy_tabel_risiko_gabungan"] = df
+
+                elif "informasi perusahaan" in sheet.lower():
+                    st.session_state["copy_informasi_perusahaan"] = df
+
         st.success("✅ File berhasil dimuat ke session state.")
 
     # 🗓️ Bulan dan tahun pelaporan
@@ -640,56 +647,38 @@ def main():
     nama_bulan = month_name[bulan_saat_ini]
     st.subheader(f"Bulan Pelaporan: {nama_bulan} {tahun_saat_ini}")
 
-    # ✅ Inisialisasi key penting jika belum ada
-    if "copy_tabel_risiko_gabungan" not in st.session_state and "copy_tabel_gabungan" in st.session_state:
-        st.session_state["copy_tabel_risiko_gabungan"] = st.session_state["copy_tabel_gabungan"].copy()
+    # 🧩 Inisialisasi session state kosong jika belum ada
+    for key in [
+        "copy_tabel_risiko_gabungan",
+        "copy_update_program_mitigasi",
+        "copy_update_kri",
+        "copy_summary_rbb",
+        "copy_tabel_residual_q1",
+        "copy_informasi_perusahaan"
+    ]:
+        st.session_state.setdefault(key, pd.DataFrame())
 
-    st.session_state.setdefault("copy_update_program_mitigasi", pd.DataFrame())
-    st.session_state.setdefault("copy_update_kri", pd.DataFrame())
-    st.session_state.setdefault("copy_summary_rbb", pd.DataFrame())
-    st.session_state.setdefault("copy_tabel_residual_q1", pd.DataFrame())
-
-    # 🧩 Form update oleh user (dan user simpan manual masing-masing)
+    # 🧠 Update user input
     tampilkan_update_program_mitigasi()
     tampilkan_update_kri()
     tampilkan_summary_rbb_dengan_pencapaian()
 
-    # 🔁 GABUNGKAN SEMUA SETELAH USER SELESAI EDIT
+    # 🔁 Gabungan dan analisis
     df_final = tampilkan_gabungan_update_risiko()
-
     if df_final is None or df_final.empty:
         st.warning("⚠️ Data gabungan tidak tersedia atau kosong.")
         return
 
-    # ✅ Susun kolom final
-    kolom_final = [
-        "Nomor", "Kode Risiko", "Kategori Risiko T2 & T3 KBUMN", "Kategori Dampak", "Peristiwa Risiko",
-        "Peristiwa Risiko dari Deskripsi", "Asumsi Perhitungan Dampak", "Jenis Program Dalam RKAP", "PIC",
-        "Skala Dampak BUMN", "Skala Probabilitas BUMN", "Progress Program Mitigasi (%)",
-        "Key Risk Indicators (KRI)", "Unit KRI", "KRI Saat Ini", "KRI Aman", "KRI Hati-Hati", "KRI Bahaya",
-        "Pengelolaan KRI", "Pengelolaan Mitigasi", "Skala Probabilitas Saat Ini", "Skala Probabilitas Q1",
-        "Skala Q2_Probabilitas", "Skala Q3_Probabilitas", "Skala Q4_Probabilitas",
-        "Nilai Pendapatan", "Pencapaian Pendapatan", "Nilai Biaya", "Pencapaian Biaya",
-        "Status Kinerja Biaya", "Status Kinerja Pendapatan", "% Kinerja Keuangan",
-        "Nilai Dampak", "Dampak Residual Saat Ini", "Skala Dampak Saat Ini",
-        "Skala Q4_Dampak", "Skala Q3_Dampak", "Skala Q2_Dampak", "Skala Dampak Q1"
-    ]
+    # ✅ Simpan hasil analisis
+    st.session_state["copy_risiko_update_terpilih"] = df_final
 
-    for kolom in kolom_final:
-        if kolom not in df_final.columns:
-            df_final[kolom] = ""
-
-    # Simpan hasil akhir ke session state
-    st.session_state["copy_risiko_update_terpilih"] = df_final[kolom_final]
-
-    # 🔥 Tampilkan heatmap
+    # 🔥 Visualisasi heatmap
     tampilkan_matriks_risiko(df_final)
 
-    # 📝 Keterangan dampak dan probabilitas
+    # 📝 Keterangan
     with st.expander("📝 Tabel Keterangan Skala Dampak & Probabilitas"):
         if not df_final.empty:
             df_keterangan = pd.DataFrame({
-                "No": df_final.get("No", ""),
                 "Kode Risiko": df_final["Kode Risiko"],
                 "Peristiwa Risiko": df_final["Peristiwa Risiko"],
                 "Keterangan Skala Dampak": df_final["Keterangan Skala Dampak"],
@@ -697,9 +686,9 @@ def main():
             })
             st.dataframe(df_keterangan, use_container_width=True)
         else:
-            st.info("ℹ️ Data belum tersedia untuk menampilkan keterangan.")
+            st.info("ℹ️ Data belum tersedia.")
 
-    # 🧾 Rekap dan editor akhir
+    # 🧾 Rekap akhir & ekspor
     st.markdown("## 🧾 Rekap Data Final")
     with st.expander("🔍 Lihat/Edit Rekap Gabungan Monitoring"):
         edited_df = st.data_editor(df_final, use_container_width=True, num_rows="dynamic")
@@ -713,3 +702,6 @@ def main():
 
     if st.button("🔗 Integrasi", key="integrasi_button_rekap"):
         simpan_integrasi_monitoring(edited_df)
+
+    # 🏢 Tambahkan editor profil perusahaan dan rekap gabungan
+    tampilkan_rekap_gabungan_update_risiko_dengan_profil_interaktif(df_final)
