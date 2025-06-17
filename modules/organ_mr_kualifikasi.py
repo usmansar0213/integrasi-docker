@@ -469,9 +469,6 @@ def main():
     try:
         st.title("📘 Organ & Kualifikasi")
 
-        # ======================= Upload Manual File Kualifikasi =======================
-        st.markdown("### 📂 Upload File Kualifikasi Organ (opsional)")
-
         uploaded_file = st.file_uploader(
             "Unggah file Excel kualifikasi organ (.xlsx)",
             type=["xlsx"],
