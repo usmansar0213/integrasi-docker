@@ -472,7 +472,7 @@ def main():
     accept_multiple_files=True,
     key="file_uploader_multi")
 
-    if uploaded_file:
+    if uploaded_files:
         load_uploaded_file_flexible(uploaded_file)
 
     # 🔵 Ambil data sasaran strategi bisnis
