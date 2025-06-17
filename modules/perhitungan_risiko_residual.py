@@ -7,7 +7,7 @@ import io
 def upload_file_gabungan_fleksibel():
     st.markdown("### 📥 Upload File Gabungan Risiko")
     uploaded_files = st.file_uploader(
-        "Unggah file (.xlsx) yang berisi Strategi, Inherent, dan/atau Residual Risiko",
+        "Silahkan Unggah file Profil_Risiko dan Inherent_Dampak",
         type=["xlsx"],
         accept_multiple_files=True,
         key="upload_file_gabungan_fleksibel"
