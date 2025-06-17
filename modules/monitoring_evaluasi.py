@@ -615,7 +615,16 @@ def buat_keterangan_risiko(row, jenis="dampak"):
 def main():
     st.title("📅 Monitoring & Evaluasi Risiko")
 
-    bulan_saat_ini = datetime.now().month
+    # Tambahkan uploader (opsional)
+    uploaded_file = st.file_uploader("📁 Unggah File Monitoring Risiko", type=["xlsx"])
+    if uploaded_file:
+        xls = pd.ExcelFile(uploaded_file)
+        for sheet in xls.sheet_names:
+            df = xls.parse(sheet)
+            st.session_state[f"copy_{sheet.lower().replace(' ', '_')}"] = df
+        st.success("✅ Data dari file berhasil dimuat ke session state.")
+
+     bulan_saat_ini = datetime.now().month
     tahun_saat_ini = datetime.now().year
     nama_bulan = month_name[bulan_saat_ini]
     st.subheader(f"Bulan Pelaporan: {nama_bulan} {tahun_saat_ini}")
