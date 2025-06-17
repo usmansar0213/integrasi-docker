@@ -277,7 +277,7 @@ def main():
                 st.image(via_icon_path, width=150)  # Ukuran besar di sisi kiri
         with col2:
             st.markdown("### Selamat Datang di PRIMA-Ai!")
-            st.markdown("### Pelindo Risk Managment Application")
+            st.markdown("### Risk Managment Application")
 
         st.markdown("""
         🚀 Aplikasi berbasis Artificial Intelegent yang dirancang khusus untuk mendukung pengelolaan manajemen risiko sesuai dengan Peraturan Menteri Badan Usaha Milik Negara Nomor PER-2/MBU/03/2023 Tahun 2023 :
