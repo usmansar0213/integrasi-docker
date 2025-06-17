@@ -659,10 +659,10 @@ def main():
     cek_data_wajib_awal()
 
     uploaded_files = st.file_uploader(
-        "📂 Upload Beberapa File (.xlsx) sekaligus", 
-        type=["xlsx"], 
-        accept_multiple_files=True,
-        key="file_uploader_multi"
+    "📥 Silakan unggah **file Strategi Risiko** dan **file Profil Risiko** (.xlsx)",
+    type=["xlsx"],
+    accept_multiple_files=True,
+    key="file_uploader_multi"
     )
 
 
