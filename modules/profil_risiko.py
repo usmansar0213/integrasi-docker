@@ -467,7 +467,7 @@ def main():
 
     # 🔵 Uploader untuk banyak file (Strategi & Profil Risiko)
     uploaded_files = st.file_uploader(
-        "📥 Silakan unggah file **Strategi Risiko** dan/atau **Profil Risiko** (.xlsx)", 
+        "📥 Silakan unggah file **Sasaran Strategi Bisnis** (.xlsx)", 
         type=["xlsx"], 
         accept_multiple_files=True,
         key="file_uploader_multi"
