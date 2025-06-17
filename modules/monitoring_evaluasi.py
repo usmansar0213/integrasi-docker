@@ -620,16 +620,18 @@ def main():
 
     if uploaded_file:
         xls = pd.ExcelFile(uploaded_file)
-
+    
         for sheet in xls.sheet_names:
             df = xls.parse(sheet)
             nama_session = sheet.lower().replace(" ", "_")
             st.session_state[f"copy_{nama_session}"] = df
-
-            # Tambahan penting: simpan sheet Anggaran PIC ke key yang dibutuhkan untuk fungsi mitigasi
+    
             if sheet.strip().lower() == "anggaran pic":
                 st.session_state["copy_tabel_anggaran_pic"] = df
-
+    
+            elif "risiko gabungan" in sheet.lower() or "monitoring" in sheet.lower():
+                st.session_state["copy_tabel_risiko_gabungan"] = df
+    
         st.success("✅ File berhasil dimuat ke session state.")
 
     # 🗓️ Bulan dan tahun pelaporan
