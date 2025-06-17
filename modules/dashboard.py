@@ -427,7 +427,7 @@ def main():
 
     # ======== 0. Upload File Semua Sekaligus ======== #
     uploaded_files = st.file_uploader(
-        "Unggah 3 file: risk_monitoring, loss event, dan kualifikasi",
+        "Unggah seluruh file integrasi risiko, loss event, dan kualifikasi (boleh multi-file)",
         type=["xlsx"],
         accept_multiple_files=True,
         key="uploaded_files_dashboard"
@@ -440,10 +440,21 @@ def main():
     # ======== 1. Load data dari uploaded_files ======== #
     df_integrasi, df_loss_event, df_kualifikasi = load_all_data_from_uploaded_files(uploaded_files)
 
-    # Simpan ke session_state
+    # ======== 2. Validasi keberadaan tiga file utama ======== #
+    if df_integrasi.empty:
+        st.error("❌ File `risk_monitoring` belum ditemukan atau tidak berisi data yang valid.")
+    if df_loss_event.empty:
+        st.error("❌ File `loss_event` belum ditemukan atau tidak berisi data yang valid.")
+    if df_kualifikasi.empty:
+        st.error("❌ File `kualifikasi` belum ditemukan atau tidak berisi data yang valid.")
+    if df_integrasi.empty or df_loss_event.empty or df_kualifikasi.empty:
+        st.stop()  # 🔴 Hentikan eksekusi jika salah satu file belum tersedia
+
+    # ======== 3. Simpan ke session_state ======== #
     st.session_state["data_integrasi"] = df_integrasi
     st.session_state["database_loss_event"] = df_loss_event
     st.session_state["database_kualifikasi"] = df_kualifikasi
+
 
     # ======== 2. Tampilkan Data Integrasi ======== #
     if df_integrasi.empty:
