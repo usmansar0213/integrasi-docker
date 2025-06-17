@@ -19,7 +19,7 @@ def show():
     Aplikasi **RISMA** menggabungkan dua pilar utama dalam manajemen risiko:
 
     - 🎛️ **MR Tools** – Alat bantu berbasis AI untuk eksplorasi dan analisis risiko secara cepat dan fleksibel
-    - 🧠 **PRIMA-Ai** – Sistem manajemen risiko enterprise yang sesuai regulasi PER-2/MBU/03/2023
+    - 🧠 **RISMA-Ai** – Sistem manajemen risiko enterprise yang sesuai regulasi PER-2/MBU/03/2023
 
     ---
     """)
@@ -42,9 +42,9 @@ def show():
     > Cocok untuk: analis risiko, pengambil keputusan proyek, tim AI & data science.
     """)
 
-    st.subheader("🏛️ PRIMA-Ai – Sistem Risiko Berbasis Regulasi")
+    st.subheader("🏛️ RISMA-Ai – Sistem Risiko Berbasis Regulasi")
     st.markdown("""
-    PRIMA-Ai dirancang untuk mengelola risiko **secara korporat** sesuai standar BUMN:
+    RISMA-Ai dirancang untuk mengelola risiko **secara korporat** sesuai standar BUMN:
 
     1. 📊 **Dashboard Otomatis** – Visualisasi ringkasan semua aktivitas risiko  
     2. 🏢 **Profil Perusahaan** – Informasi dasar unit kerja, struktur, aset  
