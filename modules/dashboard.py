@@ -20,7 +20,7 @@ def load_all_data_from_uploaded_files(uploaded_files):
             df = pd.read_excel(file)
             df["Sumber File"] = file.name
 
-            if "risk_monitoring" in filename:
+            if re.search(r"risk[_ ]?monitoring|monitoring", filename):
                 df_integrasi_list.append(df)
             elif "loss_event" in filename:
                 df_loss_list.append(df)
