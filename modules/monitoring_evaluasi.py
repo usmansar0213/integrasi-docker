@@ -32,7 +32,7 @@ def upload_semua_file_monitoring(uploaded_files):
                         st.session_state[session_key] = df
                         break
 
-            # Load sheet ke session state
+            # Load semua sheet penting ke session state
             load_sheet("program mitigasi", "copy_update_program_mitigasi")
             load_sheet("kri", "copy_update_kri")
             load_sheet("Summary RBB", "copy_summary_rbb")
@@ -48,18 +48,31 @@ def upload_semua_file_monitoring(uploaded_files):
             load_sheet("ambang batas risiko", "copy_ambang_batas_risiko")
             load_sheet("rasio keuangan", "copy_rasio_keuangan")
 
+            # Proses informasi perusahaan
             if "informasi_perusahaan" in sheet_map:
                 df = xls.parse(sheet_map["informasi_perusahaan"])
                 if "Data yang dibutuhkan" in df.columns and "Input Pengguna" in df.columns:
                     st.session_state["copy_informasi_perusahaan"] = df
 
+            # Buat salinan deskripsi risiko jika belum ada
             if "copy_tabel_risiko_gabungan" not in st.session_state:
                 if "copy_deskripsi_risiko" in st.session_state:
                     st.session_state["copy_tabel_risiko_gabungan"] = st.session_state["copy_deskripsi_risiko"].copy()
 
+            # 💡 Tambahkan: Gabungkan "Nomor Risiko" ke KRI jika tersedia
+            if "copy_key_risk_indicator" in st.session_state and "copy_update_risk_details" in st.session_state:
+                df_kri = st.session_state["copy_key_risk_indicator"]
+                df_update = st.session_state["copy_update_risk_details"]
+
+                if "Kode Risiko" in df_kri.columns and "Kode Risiko" in df_update.columns and "No" in df_update.columns:
+                    df_nomor = df_update[["Kode Risiko", "No"]].rename(columns={"No": "Nomor Risiko"})
+                    df_kri = pd.merge(df_kri, df_nomor, on="Kode Risiko", how="left")
+                    st.session_state["copy_key_risk_indicator"] = df_kri
+
         except Exception as e:
             st.error(f"❌ Gagal membaca file: {file.name}")
             st.warning(f"Detail: {e}")
+
 
 
             
