@@ -132,7 +132,8 @@ def tampilkan_matriks_risiko(df, title="🌡️ Heatmap Matriks Risiko Monitorin
         try:
             prob = int(row.get('Probabilitas Saat Ini', 0))
             damp = int(row.get('Skala Dampak Saat Ini', 0))
-            no_risiko = f"#{int(row['No'])}" if pd.notnull(row.get('No')) else ''
+            no_risiko = f"#{int(row['Nomor Risiko_y'])}" if 'Nomor Risiko_y' in row and pd.notnull(row['Nomor Risiko_y']) else ''
+
             i = prob - 1
             j = damp - 1
             if 0 <= i < 5 and 0 <= j < 5:
