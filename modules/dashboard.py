@@ -18,7 +18,15 @@ def load_all_data_from_uploaded_files(uploaded_files):
         filename = file.name.lower()
         try:
             df = pd.read_excel(file)
+            df = normalisasi_nama_kolom(df)  # 🔁 Tambahkan normalisasi di sini
             df["Sumber File"] = file.name
+
+            # Tambahan: deteksi bulan/tahun dari nama file
+            bulan, tahun = extract_bulan_tahun_dari_nama_file(filename)
+            if bulan and "Bulan Pelaporan" not in df.columns:
+                df["Bulan Pelaporan"] = bulan
+            if tahun and "Tahun Pelaporan" not in df.columns:
+                df["Tahun Pelaporan"] = tahun
 
             if re.search(r"risk[_ ]?monitoring|monitoring", filename):
                 df_integrasi_list.append(df)
