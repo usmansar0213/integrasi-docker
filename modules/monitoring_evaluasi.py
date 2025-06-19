@@ -29,17 +29,16 @@ def upload_semua_file_monitoring(uploaded_files):
                 for sheet_actual in xls.sheet_names:
                     if sheet_actual.strip().lower() == sheet_name_expected.strip().lower():
                         df = xls.parse(sheet_actual)
+                        df.columns = df.columns.str.strip()
                         st.session_state[session_key] = df
                         break
 
             # Load semua sheet penting ke session state
             load_sheet("program mitigasi", "copy_update_program_mitigasi")
-            load_sheet("kri", "copy_update_kri")
+            load_sheet("kri", "copy_key_risk_indicator")
             load_sheet("Summary RBB", "copy_summary_rbb")
             load_sheet("risiko gabungan", "copy_risiko_update_terpilih")
-            load_sheet("update_risk_details", "copy_update_risk_details")
             load_sheet("deskripsi_risiko", "copy_deskripsi_risiko")
-            load_sheet("key_risk_indicator", "copy_key_risk_indicator")
             load_sheet("anggaran pic", "copy_tabel_anggaran_pic")
             load_sheet("deskripsi mitigasi", "copy_deskripsi_mitigasi")
             load_sheet("residual_dampak", "copy_tabel_residual_dampak")
@@ -48,34 +47,39 @@ def upload_semua_file_monitoring(uploaded_files):
             load_sheet("ambang batas risiko", "copy_ambang_batas_risiko")
             load_sheet("rasio keuangan", "copy_rasio_keuangan")
 
-            # Proses informasi perusahaan
+            # Informasi Perusahaan
             if "informasi_perusahaan" in sheet_map:
                 df = xls.parse(sheet_map["informasi_perusahaan"])
                 if "Data yang dibutuhkan" in df.columns and "Input Pengguna" in df.columns:
                     st.session_state["copy_informasi_perusahaan"] = df
 
-            # Buat salinan deskripsi risiko jika belum ada
-            if "copy_tabel_risiko_gabungan" not in st.session_state:
-                if "copy_deskripsi_risiko" in st.session_state:
-                    st.session_state["copy_tabel_risiko_gabungan"] = st.session_state["copy_deskripsi_risiko"].copy()
+            # Load dan siapkan "update_risk_details" dengan Nomor Risiko
+            if "update_risk_details" in sheet_map:
+                df_risk_detail = xls.parse(sheet_map["update_risk_details"])
+                df_risk_detail.columns = df_risk_detail.columns.str.strip()
+                if "No" in df_risk_detail.columns:
+                    df_risk_detail.rename(columns={"No": "Nomor Risiko"}, inplace=True)
+                st.session_state["copy_update_risk_details"] = df_risk_detail
 
-            # 💡 Tambahkan: Gabungkan "Nomor Risiko" ke KRI jika tersedia
-            if "copy_key_risk_indicator" in st.session_state and "copy_update_risk_details" in st.session_state:
-                df_kri = st.session_state["copy_key_risk_indicator"]
-                df_update = st.session_state["copy_update_risk_details"]
+                # Gabungkan "Nomor Risiko" ke sheet lain yang pakai "Kode Risiko"
+                if "Kode Risiko" in df_risk_detail.columns and "Nomor Risiko" in df_risk_detail.columns:
+                    nomor_map = df_risk_detail[["Kode Risiko", "Nomor Risiko"]].drop_duplicates()
 
-                if "Kode Risiko" in df_kri.columns and "Kode Risiko" in df_update.columns and "No" in df_update.columns:
-                    df_nomor = df_update[["Kode Risiko", "No"]].rename(columns={"No": "Nomor Risiko"})
-                    df_kri = pd.merge(df_kri, df_nomor, on="Kode Risiko", how="left")
-                    st.session_state["copy_key_risk_indicator"] = df_kri
+                    def merge_nomor(df_key):
+                        df = st.session_state.get(df_key, pd.DataFrame())
+                        if not df.empty and "Kode Risiko" in df.columns:
+                            df = pd.merge(df, nomor_map, on="Kode Risiko", how="left")
+                            st.session_state[df_key] = df
+
+                    merge_nomor("copy_key_risk_indicator")
+                    merge_nomor("copy_update_program_mitigasi")
+                    merge_nomor("copy_summary_rbb")
+                    merge_nomor("copy_deskripsi_risiko")
 
         except Exception as e:
             st.error(f"❌ Gagal membaca file: {file.name}")
             st.warning(f"Detail: {e}")
 
-
-
-            
 # ------------------- Fungsi Update -------------------
 def update_program_mitigasi(edited_df):
     st.session_state["copy_program_mitigasi_lengkap"] = edited_df
