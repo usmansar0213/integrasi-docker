@@ -617,7 +617,16 @@ def gabungkan_semua_data_monitoring():
         df_gabungan[col] = df_info.at[0, col]
         df_matriks[col] = df_info.at[0, col]
 
-    # 🆕 Ambil Nomor Risiko dari update_risk_details dan tambahkan ke df_gabungan lebih awal
+    # 🆕 Tambahkan Bulan dan Tahun Pelaporan dari session_state
+    bulan = st.session_state.get("bulan_pelaporan", datetime.now().strftime("%B"))
+    tahun = st.session_state.get("tahun_pelaporan", datetime.now().year)
+
+    df_gabungan["Bulan Pelaporan"] = bulan
+    df_gabungan["Tahun Pelaporan"] = tahun
+    df_matriks["Bulan Pelaporan"] = bulan
+    df_matriks["Tahun Pelaporan"] = tahun
+
+    # 🆕 Tambahkan Nomor Risiko jika tersedia
     df_update = st.session_state.get("copy_update_risk_details", pd.DataFrame())
     if not df_update.empty and "Kode Risiko" in df_update.columns and "No" in df_update.columns:
         df_nomor = df_update[["Kode Risiko", "No"]].rename(columns={"No": "Nomor Risiko"}).drop_duplicates()
@@ -627,22 +636,26 @@ def gabungkan_semua_data_monitoring():
     df_final = pd.merge(
         df_gabungan,
         df_matriks,
-        on=["Kode Risiko"] + df_info.columns.tolist(),
+        on=["Kode Risiko"] + df_info.columns.tolist() + ["Bulan Pelaporan", "Tahun Pelaporan"],
         how="outer"
     )
 
     # Hapus kolom duplikat
     df_final = df_final.loc[:, ~df_final.columns.duplicated()]
 
-    # Susun kolom agar: info perusahaan → Nomor Risiko → sisanya
-    kolom_perusahaan = df_info.columns.tolist()
-    kolom_awal = kolom_perusahaan + (["Nomor Risiko"] if "Nomor Risiko" in df_final.columns else [])
+    # Susun kolom: info perusahaan + pelaporan + nomor risiko + sisanya
+    kolom_awal = (
+        df_info.columns.tolist()
+        + ["Bulan Pelaporan", "Tahun Pelaporan"]
+        + (["Nomor Risiko"] if "Nomor Risiko" in df_final.columns else [])
+    )
     kolom_lain = [k for k in df_final.columns if k not in kolom_awal]
     df_final = df_final[kolom_awal + kolom_lain]
 
     # Simpan dan tampilkan
     st.session_state["copy_semua_data_monitoring"] = df_final
     st.dataframe(df_final, use_container_width=True)
+
 
 def unduh_data_monitoring_gabungan():
     st.subheader("⬇️ Unduh Data Gabungan Monitoring")
