@@ -619,7 +619,7 @@ def unduh_data_monitoring_gabungan():
 
 
 def main():
-    st.set_page_config(layout="wide")
+
     st.title("📊 Monitoring dan Evaluasi Risiko")
 
     st.markdown("### 📤 Upload File Monitoring")
