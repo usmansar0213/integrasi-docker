@@ -87,6 +87,13 @@ def update_program_mitigasi(edited_df):
 
 
 def update_kri(edited_df):
+    # Tambahkan Nomor Risiko jika ada di update_risk_details
+    df_update = st.session_state.get("copy_update_risk_details", pd.DataFrame())
+    if not edited_df.empty and df_update is not None:
+        if "Kode Risiko" in edited_df.columns and "Kode Risiko" in df_update.columns and "No" in df_update.columns:
+            df_nomor = df_update[["Kode Risiko", "No"]].rename(columns={"No": "Nomor Risiko"})
+            edited_df = pd.merge(edited_df, df_nomor, on="Kode Risiko", how="left")
+
     st.session_state["copy_update_kri"] = edited_df
     st.session_state["update_kri"] = True
 
