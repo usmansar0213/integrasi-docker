@@ -32,7 +32,7 @@ def upload_semua_file_monitoring(uploaded_files):
                         st.session_state[session_key] = df
                         break
 
-            # Load sheet ke session state
+            # Load semua sheet penting ke session state
             load_sheet("program mitigasi", "copy_update_program_mitigasi")
             load_sheet("kri", "copy_update_kri")
             load_sheet("Summary RBB", "copy_summary_rbb")
@@ -48,18 +48,31 @@ def upload_semua_file_monitoring(uploaded_files):
             load_sheet("ambang batas risiko", "copy_ambang_batas_risiko")
             load_sheet("rasio keuangan", "copy_rasio_keuangan")
 
+            # Proses informasi perusahaan
             if "informasi_perusahaan" in sheet_map:
                 df = xls.parse(sheet_map["informasi_perusahaan"])
                 if "Data yang dibutuhkan" in df.columns and "Input Pengguna" in df.columns:
                     st.session_state["copy_informasi_perusahaan"] = df
 
+            # Buat salinan deskripsi risiko jika belum ada
             if "copy_tabel_risiko_gabungan" not in st.session_state:
                 if "copy_deskripsi_risiko" in st.session_state:
                     st.session_state["copy_tabel_risiko_gabungan"] = st.session_state["copy_deskripsi_risiko"].copy()
 
+            # 💡 Tambahkan: Gabungkan "Nomor Risiko" ke KRI jika tersedia
+            if "copy_key_risk_indicator" in st.session_state and "copy_update_risk_details" in st.session_state:
+                df_kri = st.session_state["copy_key_risk_indicator"]
+                df_update = st.session_state["copy_update_risk_details"]
+
+                if "Kode Risiko" in df_kri.columns and "Kode Risiko" in df_update.columns and "No" in df_update.columns:
+                    df_nomor = df_update[["Kode Risiko", "No"]].rename(columns={"No": "Nomor Risiko"})
+                    df_kri = pd.merge(df_kri, df_nomor, on="Kode Risiko", how="left")
+                    st.session_state["copy_key_risk_indicator"] = df_kri
+
         except Exception as e:
             st.error(f"❌ Gagal membaca file: {file.name}")
             st.warning(f"Detail: {e}")
+
 
 
             
@@ -548,7 +561,7 @@ def gabungkan_semua_data_monitoring():
         st.warning("⚠️ Informasi Perusahaan belum tersedia.")
         return
 
-    # Ekstrak semua informasi perusahaan menjadi satu baris dictionary
+    # Ekstrak semua informasi perusahaan
     try:
         df_info = df_perusahaan.copy()
         df_info.columns = df_info.columns.str.strip()
@@ -558,7 +571,7 @@ def gabungkan_semua_data_monitoring():
         st.error("❌ Gagal memproses informasi perusahaan.")
         return
 
-    # Tambahkan informasi perusahaan ke setiap baris df_gabungan dan df_matriks
+    # Tambahkan kolom perusahaan ke df_gabungan dan df_matriks
     for col in df_info.columns:
         df_gabungan[col] = df_info.at[0, col]
         df_matriks[col] = df_info.at[0, col]
@@ -571,17 +584,25 @@ def gabungkan_semua_data_monitoring():
         how="outer"
     )
 
+    # 💡 Tambahkan Nomor Risiko dari update_risk_details
+    df_update = st.session_state.get("copy_update_risk_details", pd.DataFrame())
+    if not df_update.empty and "Kode Risiko" in df_update.columns and "No" in df_update.columns:
+        df_nomor = df_update[["Kode Risiko", "No"]].rename(columns={"No": "Nomor Risiko"})
+        df_final = pd.merge(df_final, df_nomor, on="Kode Risiko", how="left")
+
     # Hapus kolom duplikat
     df_final = df_final.loc[:, ~df_final.columns.duplicated()]
 
-    # Urutkan kolom: info perusahaan dulu, lalu lainnya
+    # Urutkan kolom: info perusahaan → Nomor Risiko → sisanya
     kolom_perusahaan = df_info.columns.tolist()
-    kolom_lain = [k for k in df_final.columns if k not in kolom_perusahaan]
-    df_final = df_final[kolom_perusahaan + kolom_lain]
+    kolom_awal = kolom_perusahaan + (["Nomor Risiko"] if "Nomor Risiko" in df_final.columns else [])
+    kolom_lain = [k for k in df_final.columns if k not in kolom_awal]
+    df_final = df_final[kolom_awal + kolom_lain]
 
     # Simpan dan tampilkan
     st.session_state["copy_semua_data_monitoring"] = df_final
     st.dataframe(df_final, use_container_width=True)
+
 def unduh_data_monitoring_gabungan():
     st.subheader("⬇️ Unduh Data Gabungan Monitoring")
 
@@ -619,7 +640,7 @@ def unduh_data_monitoring_gabungan():
 
 
 def main():
-    st.set_page_config(layout="wide")
+
     st.title("📊 Monitoring dan Evaluasi Risiko")
 
     st.markdown("### 📤 Upload File Monitoring")
