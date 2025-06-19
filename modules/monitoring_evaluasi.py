@@ -555,7 +555,7 @@ def tampilkan_heatmap_risiko_kuartal():
     plt.tight_layout()
     st.pyplot(fig)
     
-ef gabungkan_semua_data_monitoring():
+def gabungkan_semua_data_monitoring():
     st.subheader("🧾 Gabungan Semua Data Monitoring")
 
     df_gabungan = st.session_state.get("copy_gabungan_update_risiko", pd.DataFrame())
