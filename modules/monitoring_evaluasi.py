@@ -10,6 +10,36 @@ import io
 
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
+import streamlit as st
+from datetime import datetime
+
+def input_bulan_tahun_pelaporan():
+    bulan_default = datetime.now().strftime("%B")  # e.g. "June"
+    tahun_default = datetime.now().year
+
+    # Daftar bulan dalam Bahasa Indonesia atau Inggris (pilih sesuai preferensi)
+    daftar_bulan = [
+        "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+        "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+    ]
+
+    # Konversi nama bulan default jika pakai Bahasa Inggris
+    mapping_bulan = {
+        "January": "Januari", "February": "Februari", "March": "Maret",
+        "April": "April", "May": "Mei", "June": "Juni",
+        "July": "Juli", "August": "Agustus", "September": "September",
+        "October": "Oktober", "November": "November", "December": "Desember"
+    }
+
+    bulan_default_id = mapping_bulan.get(bulan_default, bulan_default)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        bulan = st.selectbox("📅 Bulan Pelaporan", daftar_bulan, index=daftar_bulan.index(bulan_default_id))
+    with col2:
+        tahun = st.number_input("📆 Tahun Pelaporan", min_value=2000, max_value=2100, value=tahun_default, step=1)
+
+    return bulan, tahun
 
 def get_sheet_map(xls: pd.ExcelFile) -> dict:
     """
@@ -651,8 +681,13 @@ def unduh_data_monitoring_gabungan():
 
 
 def main():
-
+    bulan_pelaporan, tahun_pelaporan = input_bulan_tahun_pelaporan()
+    st.write(f"📌 Anda memilih pelaporan untuk: **{bulan_pelaporan} {tahun_pelaporan}**")
     st.title("📊 Monitoring dan Evaluasi Risiko")
+    
+
+    st.session_state["bulan_pelaporan"] = bulan_pelaporan
+    st.session_state["tahun_pelaporan"] = tahun_pelaporan
 
     st.markdown("### 📤 Upload File Monitoring")
     uploaded_files = st.file_uploader(
