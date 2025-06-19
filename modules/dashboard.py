@@ -104,7 +104,7 @@ def filter_risiko_interaktif(df):
 
 
 # -------------------- Fungsi Heatmap --------------------
-def tampilkan_matriks_risiko(df, title="🌡️ Heatmap Matriks Risiko Monitoring", x_label="Skala Dampak", y_label="Skala Probabilitas"):
+def tampilkan_matriks_risiko(df, title="🌡️ Heatmap Matriks Risiko Monitoring", x_label="Skala Dampak", y_label="robabilitas Saat ini"):
     st.subheader(title)
 
     risk_labels = {
@@ -130,7 +130,7 @@ def tampilkan_matriks_risiko(df, title="🌡️ Heatmap Matriks Risiko Monitorin
 
     for _, row in df.iterrows():
         try:
-            prob = int(row.get('Skala Probabilitas Saat Ini', 0))
+            prob = int(row.get('Probabilitas Saat Ini', 0))
             damp = int(row.get('Skala Dampak Saat Ini', 0))
             no_risiko = f"#{int(row['No'])}" if pd.notnull(row.get('No')) else ''
             i = prob - 1
@@ -171,7 +171,7 @@ def tampilkan_ringkasan_risiko_terpilih(df_filtered):
     kolom_risiko_terpilih = [
         "No", 
         "Peristiwa Risiko dari Deskripsi", 
-        "Skala Probabilitas Saat Ini", 
+        "Probabilitas Saat Ini", 
         "Skala Dampak Saat Ini", 
         "Jenis Program Dalam RKAP",
         "Progress Program Mitigasi (%)"
@@ -185,14 +185,14 @@ def tampilkan_ringkasan_risiko_terpilih(df_filtered):
         st.warning("⚠️ Beberapa kolom tidak ditemukan di data terfilter.")
 
 def buat_tabel_distribusi_exposure_per_kode_risiko(df):
-    kolom_wajib = ["Kode Perusahaan", "Kode Risiko", "Skala Dampak Saat Ini", "Skala Probabilitas Saat Ini"]
+    kolom_wajib = ["Kode Perusahaan", "Kode Risiko", "Skala Dampak Saat Ini", "Probabilitas Saat Ini"]
     if not all(k in df.columns for k in kolom_wajib):
         st.warning("⚠️ Kolom penting tidak ditemukan.")
         return pd.DataFrame()
 
     df["Skala Dampak Saat Ini"] = pd.to_numeric(df["Skala Dampak Saat Ini"], errors="coerce")
-    df["Skala Probabilitas Saat Ini"] = pd.to_numeric(df["Skala Probabilitas Saat Ini"], errors="coerce")
-    df["Eksposur Risiko"] = df["Skala Dampak Saat Ini"] * df["Skala Probabilitas Saat Ini"]
+    df["Probabilitas Saat Ini"] = pd.to_numeric(df["Probabilitas Saat Ini"], errors="coerce")
+    df["Eksposur Risiko"] = df["Skala Dampak Saat Ini"] * df["Probabilitas Saat Ini"]
     df = df.dropna(subset=["Kode Perusahaan", "Kode Risiko", "Eksposur Risiko"])
 
     tabel = df.pivot_table(
@@ -313,9 +313,9 @@ def get_risiko_eksposur_tinggi(df):
         return pd.DataFrame(), f"Kolom hilang: {missing}"
 
     df = df.copy()
-    df["Skala Probabilitas Saat Ini"] = pd.to_numeric(df.get("Skala Probabilitas Saat Ini"), errors="coerce")
+    df["Probabilitas Saat Ini"] = pd.to_numeric(df.get("Probabilitas Saat Ini"), errors="coerce")
     df["Skala Dampak Saat Ini"] = pd.to_numeric(df.get("Skala Dampak Saat Ini"), errors="coerce")
-    df["Eksposur Risiko"] = df["Skala Probabilitas Saat Ini"] * df["Skala Dampak Saat Ini"]
+    df["Eksposur Risiko"] = df[{"Probabilitas Saat Ini"] * df["Skala Dampak Saat Ini"]
     hasil = df[df["Eksposur Risiko"] > df["Eksposur Risiko Target Quarter"]]
 
     return hasil[[
@@ -476,7 +476,7 @@ def main():
     st.markdown("---")
 
     # ======== 5. Heatmap Risiko ========= #
-    if "Skala Dampak Saat Ini" in df_filtered.columns and "Skala Probabilitas Saat Ini" in df_filtered.columns:
+    if "Skala Dampak Saat Ini" in df_filtered.columns and "Probabilitas Saat Ini" in df_filtered.columns:
         tampilkan_matriks_risiko(df_filtered)
     else:
         st.warning("⚠️ Kolom skala dampak/probabilitas belum tersedia.")
