@@ -315,7 +315,7 @@ def get_risiko_eksposur_tinggi(df):
     df = df.copy()
     df["Probabilitas Saat Ini"] = pd.to_numeric(df.get("Probabilitas Saat Ini"), errors="coerce")
     df["Skala Dampak Saat Ini"] = pd.to_numeric(df.get("Skala Dampak Saat Ini"), errors="coerce")
-    df["Eksposur Risiko"] = df[{"Probabilitas Saat Ini"] * df["Skala Dampak Saat Ini"]
+    df["Eksposur Risiko"] = df["Probabilitas Saat Ini"] * df["Skala Dampak Saat Ini"]
     hasil = df[df["Eksposur Risiko"] > df["Eksposur Risiko Target Quarter"]]
 
     return hasil[[
