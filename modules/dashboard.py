@@ -17,19 +17,9 @@ def load_all_data_from_uploaded_files(uploaded_files):
     for file in uploaded_files:
         filename = file.name.lower()
         try:
-            # Baca file
             df = pd.read_excel(file)
-            df = normalisasi_nama_kolom(df)  # Normalisasi nama kolom
             df["Sumber File"] = file.name
 
-            # Cek dan tambahkan Bulan/Tahun Pelaporan dari nama file hanya jika tidak ada di kolom
-            bulan, tahun = extract_bulan_tahun_dari_nama_file(filename)
-            if "Bulan Pelaporan" not in df.columns and bulan:
-                df["Bulan Pelaporan"] = bulan
-            if "Tahun Pelaporan" not in df.columns and tahun:
-                df["Tahun Pelaporan"] = tahun
-
-            # Klasifikasikan file
             if re.search(r"risk[_ ]?monitoring|monitoring", filename):
                 df_integrasi_list.append(df)
             elif "loss_event" in filename:
@@ -46,24 +36,6 @@ def load_all_data_from_uploaded_files(uploaded_files):
     df_kual = pd.concat(df_kual_list, ignore_index=True) if df_kual_list else pd.DataFrame()
 
     return df_integrasi, df_loss, df_kual
-
-
-def normalisasi_nama_kolom(df: pd.DataFrame) -> pd.DataFrame:
-    mapping_kolom = {
-        "probabilitas saat ini": "Skala Probabilitas Saat Ini",
-        "skala dampak saat ini": "Skala Dampak Saat Ini",
-        "nomor risiko_x": "No",
-        "nilai q2_eksposur": "Nilai Eksposur Risiko",
-        "peristiwa risiko_kri": "Peristiwa Risiko dari Deskripsi"
-    }
-
-    df.columns = [col.strip() for col in df.columns]
-    df_rename = {
-        col: mapping_kolom.get(col.strip().lower(), col)  # pakai lower
-        for col in df.columns
-    }
-    return df.rename(columns=df_rename)
-
 
 def tampilkan_data_integrasi(df: pd.DataFrame, judul: str = "📄 Data Integrasi Risiko"):
     st.subheader("📊 Dashboard Monitoring Risiko")
