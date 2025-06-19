@@ -307,7 +307,7 @@ def early_warning_indicator(df):
             st.dataframe(data3, use_container_width=True)
 
 def get_risiko_eksposur_tinggi(df):
-    kolom_dibutuhkan = ["No", "Nama Perusahaan", "Divisi", "Peristiwa Risiko dari Deskripsi", "Skala Probabilitas Saat Ini", "Skala Dampak Saat Ini", "Eksposur Risiko Target Quarter"]
+    kolom_dibutuhkan = ["No", "Nama Perusahaan", "Divisi", "Peristiwa Risiko dari Deskripsi", "Probabilitas Saat Ini", "Skala Dampak Saat Ini", "Eksposur Risiko Target Quarter"]
     missing = [k for k in kolom_dibutuhkan if k not in df.columns]
     if missing:
         return pd.DataFrame(), f"Kolom hilang: {missing}"
