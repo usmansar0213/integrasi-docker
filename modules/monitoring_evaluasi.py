@@ -172,6 +172,7 @@ def tampilkan_update_kri():
             st.warning("⚠️ Tabel Key Risk Indicator belum tersedia di session state.")
             return
 
+        # Normalisasi nama kolom
         kolom_alias = {
             "kode risiko": "Kode Risiko",
             "peristiwa risiko": "Peristiwa Risiko",
@@ -194,6 +195,13 @@ def tampilkan_update_kri():
             return
 
         df_sumber = df_kri[kolom_dipilih].copy()
+
+        # 🔍 Tambahkan "Nomor Risiko" jika tersedia dari update_risk_details
+        df_risk = st.session_state.get("copy_update_risk_details", pd.DataFrame())
+        if not df_risk.empty and "Kode Risiko" in df_risk.columns and "No" in df_risk.columns:
+            df_nomor = df_risk[["Kode Risiko", "No"]].rename(columns={"No": "Nomor Risiko"}).drop_duplicates()
+            df_sumber = pd.merge(df_sumber, df_nomor, on="Kode Risiko", how="left")
+
         df_sumber["KRI Saat Ini"] = ""
         df_sumber["Pengelolaan KRI"] = "Kurang"
 
@@ -205,6 +213,12 @@ def tampilkan_update_kri():
         else:
             df_sumber["Pengelolaan KRI"] = df_sumber["Pengelolaan KRI"].replace("", "Kurang").fillna("Kurang")
 
+    # Urutkan agar 'Nomor Risiko' muncul di awal jika ada
+    if "Nomor Risiko" in df_sumber.columns:
+        kolom_urut = ["Nomor Risiko"] + [col for col in df_sumber.columns if col != "Nomor Risiko"]
+        df_sumber = df_sumber[kolom_urut]
+
+    # Tampilkan editor data
     edited_df = st.data_editor(
         df_sumber,
         use_container_width=True,
@@ -222,8 +236,6 @@ def tampilkan_update_kri():
     if st.button("✅ Simpan Update KRI"):
         update_kri(edited_df)
         st.success("✅ Update KRI disimpan.")
-
-
 
 # ------------------- UI: Ringkasan RBB + Pencapaian -------------------
 def tampilkan_summary_rbb_dengan_pencapaian():
