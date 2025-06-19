@@ -555,14 +555,13 @@ def tampilkan_heatmap_risiko_kuartal():
     plt.tight_layout()
     st.pyplot(fig)
     
-def gabungkan_semua_data_monitoring():
+ef gabungkan_semua_data_monitoring():
     st.subheader("🧾 Gabungan Semua Data Monitoring")
 
     df_gabungan = st.session_state.get("copy_gabungan_update_risiko", pd.DataFrame())
     df_perusahaan = st.session_state.get("copy_informasi_perusahaan", pd.DataFrame())
     df_matriks = st.session_state.get("copy_matriks_risiko_kuartal", pd.DataFrame())
 
-    # Validasi
     if df_gabungan.empty:
         st.warning("⚠️ Gabungan Program Mitigasi dan KRI belum tersedia.")
         return
@@ -573,7 +572,7 @@ def gabungkan_semua_data_monitoring():
         st.warning("⚠️ Informasi Perusahaan belum tersedia.")
         return
 
-    # Ekstrak semua informasi perusahaan
+    # Ekstrak metadata perusahaan
     try:
         df_info = df_perusahaan.copy()
         df_info.columns = df_info.columns.str.strip()
@@ -583,12 +582,18 @@ def gabungkan_semua_data_monitoring():
         st.error("❌ Gagal memproses informasi perusahaan.")
         return
 
-    # Tambahkan kolom perusahaan ke df_gabungan dan df_matriks
+    # Tambahkan informasi perusahaan ke df_gabungan dan df_matriks
     for col in df_info.columns:
         df_gabungan[col] = df_info.at[0, col]
         df_matriks[col] = df_info.at[0, col]
 
-    # Gabungkan berdasarkan 'Kode Risiko'
+    # 🆕 Ambil Nomor Risiko dari update_risk_details dan tambahkan ke df_gabungan lebih awal
+    df_update = st.session_state.get("copy_update_risk_details", pd.DataFrame())
+    if not df_update.empty and "Kode Risiko" in df_update.columns and "No" in df_update.columns:
+        df_nomor = df_update[["Kode Risiko", "No"]].rename(columns={"No": "Nomor Risiko"}).drop_duplicates()
+        df_gabungan = pd.merge(df_gabungan, df_nomor, on="Kode Risiko", how="left")
+
+    # Gabungkan gabungan KRI+Mitigasi dengan Matriks Risiko Residual
     df_final = pd.merge(
         df_gabungan,
         df_matriks,
@@ -596,16 +601,10 @@ def gabungkan_semua_data_monitoring():
         how="outer"
     )
 
-    # 💡 Tambahkan Nomor Risiko dari update_risk_details
-    df_update = st.session_state.get("copy_update_risk_details", pd.DataFrame())
-    if not df_update.empty and "Kode Risiko" in df_update.columns and "No" in df_update.columns:
-        df_nomor = df_update[["Kode Risiko", "No"]].rename(columns={"No": "Nomor Risiko"})
-        df_final = pd.merge(df_final, df_nomor, on="Kode Risiko", how="left")
-
     # Hapus kolom duplikat
     df_final = df_final.loc[:, ~df_final.columns.duplicated()]
 
-    # Urutkan kolom: info perusahaan → Nomor Risiko → sisanya
+    # Susun kolom agar: info perusahaan → Nomor Risiko → sisanya
     kolom_perusahaan = df_info.columns.tolist()
     kolom_awal = kolom_perusahaan + (["Nomor Risiko"] if "Nomor Risiko" in df_final.columns else [])
     kolom_lain = [k for k in df_final.columns if k not in kolom_awal]
