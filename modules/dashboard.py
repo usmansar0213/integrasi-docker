@@ -48,16 +48,19 @@ def load_all_data_from_uploaded_files(uploaded_files):
 def normalisasi_nama_kolom(df: pd.DataFrame) -> pd.DataFrame:
     mapping_kolom = {
         "probabilitas saat ini": "Skala Probabilitas Saat Ini",
+        "skala dampak saat ini": "Skala Dampak Saat Ini",
         "nomor risiko_x": "No",
-        "nilai q2_eksposur": "Nilai Eksposur Risiko"
+        "nilai q2_eksposur": "Nilai Eksposur Risiko",
+        "peristiwa risiko_kri": "Peristiwa Risiko dari Deskripsi"
     }
 
     df.columns = [col.strip() for col in df.columns]
     df_rename = {
-        col: mapping_kolom.get(col.strip().lower(), col)
+        col: mapping_kolom.get(col.strip().lower(), col)  # pakai lower
         for col in df.columns
     }
     return df.rename(columns=df_rename)
+
 
 def tampilkan_data_integrasi(df: pd.DataFrame, judul: str = "📄 Data Integrasi Risiko"):
     st.subheader("📊 Dashboard Monitoring Risiko")
