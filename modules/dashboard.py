@@ -435,7 +435,7 @@ def main():
     )
 
     if not uploaded_files:
-        st.warning("⚠️ Silakan upload file terlebih dahulu.")
+        st.warning("⚠️ Silakan upload 3 file : Kualifikasi_organ , loss_event, monitoring")
         return
 
     # ======== 1. Load data dari uploaded_files ======== #
