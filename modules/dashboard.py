@@ -170,7 +170,7 @@ def tampilkan_ringkasan_risiko_terpilih(df_filtered):
     st.subheader("📋 Ringkasan Risiko Terpilih")
 
     kolom_risiko_terpilih = [
-        "No", 
+        "Nomor Risiko_y", 
         "Peristiwa Risiko_KRI", 
         "Probabilitas Saat Ini", 
         "Skala Dampak Saat Ini", 
