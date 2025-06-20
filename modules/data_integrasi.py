@@ -114,7 +114,7 @@ def main():
     st.header("🧩 Modul Integrasi Data")
 
     uploaded_files = st.file_uploader(
-        "📤 Unggah file Excel integrasi (.xlsx) – wajib diisi",
+        "📤 Unggah file Monitoring",
         type=["xlsx"],
         accept_multiple_files=True,
         key="upload_file_integrasi"
