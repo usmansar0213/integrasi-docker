@@ -87,7 +87,7 @@ def cek_perusahaan_tanpa_file(semua_file, daftar_perusahaan, bulan, tahun):
 
     belum_lapor = sorted(set(daftar_perusahaan) - perusahaan_ada_file)
     if belum_lapor:
-        st.warning(f"🚫 {len(belum_lapor)} perusahaan belum mengirim file integrasi untuk {bulan} {tahun}:")
+        st.warning(f"🚫 {len(belum_lapor)} perusahaan belum mengirim file monitoring untuk {bulan} {tahun}:")
         df_belum_lapor = pd.DataFrame([{
             "Kode Perusahaan": kode,
             "Bulan": bulan,
