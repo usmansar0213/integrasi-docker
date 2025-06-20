@@ -428,7 +428,7 @@ def main():
 
     # ======== 0. Upload File Semua Sekaligus ======== #
     uploaded_files = st.file_uploader(
-        "Unggah file risk_monitoring yang akan diintegrasikan",
+        "Silakan upload 3 file : Kualifikasi_organ , loss_event, monitoring",
         type=["xlsx"],
         accept_multiple_files=True,
         key="uploaded_files_dashboard"
