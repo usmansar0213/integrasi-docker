@@ -274,7 +274,7 @@ def early_warning_indicator(df):
             df[kolom] = info_dict.get(kolom, "NA")
         return df
 
-    for kolom in ["No", "Nama Perusahaan", "Divisi", "Peristiwa Risiko_KRI"]:
+    for kolom in ["Nomor Risiko_y", "Nama Perusahaan", "Divisi", "Peristiwa Risiko_KRI"]:
         df = fallback_kolom(df, kolom)
 
     # 🔥 Eksposur Melebihi Target
@@ -308,7 +308,7 @@ def early_warning_indicator(df):
             st.dataframe(data3, use_container_width=True)
 
 def get_risiko_eksposur_tinggi(df):
-    kolom_dibutuhkan = ["No", "Nama Perusahaan", "Divisi", "Peristiwa Risiko_KRI", "Probabilitas Saat Ini", "Skala Dampak Saat Ini", "Eksposur Risiko Target Quarter"]
+    kolom_dibutuhkan = ["Nomor Risiko_y", "Nama Perusahaan", "Divisi", "Peristiwa Risiko_KRI", "Probabilitas Saat Ini", "Skala Dampak Saat Ini", "Eksposur Risiko Target Quarter"]
     missing = [k for k in kolom_dibutuhkan if k not in df.columns]
     if missing:
         return pd.DataFrame(), f"Kolom hilang: {missing}"
@@ -320,7 +320,7 @@ def get_risiko_eksposur_tinggi(df):
     hasil = df[df["Eksposur Risiko"] > df["Eksposur Risiko Target Quarter"]]
 
     return hasil[[
-        "No", "Nama Perusahaan", "Divisi", "Peristiwa Risiko_KRI",
+        "Nomor Risiko_y", "Nama Perusahaan", "Divisi", "Peristiwa Risiko_KRI",
         "Eksposur Risiko", "Eksposur Risiko Target Quarter"
     ]], None
 
@@ -331,7 +331,7 @@ def get_progress_mitigasi_rendah(df):
         return None, "Kolom 'Progress Program Mitigasi (%)' atau 'Target Progress Quarter' tidak ditemukan."
     hasil = df[df["Progress Program Mitigasi (%)"] < df["Target Progress Quarter"]]
     return hasil[[
-        "No", "Nama Perusahaan", "Divisi", "Peristiwa Risiko_KRI",
+        "Nomor Risiko_y", "Nama Perusahaan", "Divisi", "Peristiwa Risiko_KRI",
         "Progress Program Mitigasi (%)", "Target Progress Quarter"
     ]], None
 
@@ -346,7 +346,7 @@ def get_kri_kurang(df):
         return None, "Kolom 'Status KRI' atau 'Pengelolaan KRI' tidak ditemukan."
     hasil = df[df[kolom_kri].astype(str).str.lower().str.strip() == "kurang"]
     return hasil[[
-        "No", "Nama Perusahaan", "Divisi", "Peristiwa Risiko_KRI", kolom_kri
+        "Nomor Risiko_y", "Nama Perusahaan", "Divisi", "Peristiwa Risiko_KRI", kolom_kri
     ]], None
 
 def tampilkan_loss_event(df_filtered):
