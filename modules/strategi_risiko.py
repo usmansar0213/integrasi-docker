@@ -1,7 +1,8 @@
 # modules/strategi_risiko.py
 # ======================================================
 # Strategi Risiko — Upload, Ambang Batas, Taksonomi (Checkbox),
-# AI Penyebab Utama → Pilih Penyebab → AI Metrix, Editor, Export
+# AI Root Causes → Pilih Penyebab → AI Param Templates (regex→parameter/satuan/limit)
+# → AI Metrix (Parameter Kunci) → Validasi + Auto-Fix berbasis Template AI → Editor → Export
 # ======================================================
 
 import streamlit as st
@@ -13,7 +14,7 @@ import json
 import io
 from datetime import datetime
 
-# ====== Taksonomi Risiko (BARU, sesuai instruksi) ======
+# ====== Taksonomi Risiko (sesuai instruksi) ======
 TAXONOMY = {
     "🧭 Strategic Risk": [
         "Kegagalan Pelaksanaan Inisiatif Strategis Pengembangan Bisnis",
@@ -54,12 +55,10 @@ TAXONOMY = {
 # Utils
 # ======================================================
 
-def extract_json(response_text: str):
-    """Ambil JSON array valid dari teks (jawaban model)."""
+def extract_json(text: str):
     try:
-        m = re.search(r"\[.*\]", response_text or "", flags=re.DOTALL)
-        if not m:
-            return None
+        m = re.search(r"\[.*\]", text or "", flags=re.DOTALL)
+        if not m: return None
         return json.loads(m.group())
     except Exception:
         return None
@@ -68,7 +67,6 @@ def _slug(s: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "_", str(s)).strip("_").lower()
 
 def generate_risk_codes(df: pd.DataFrame) -> pd.DataFrame:
-    """Autogenerate 'Kode Risiko' jika kosong, berdasarkan kolom kategori."""
     if "Kode Risiko" not in df.columns:
         df["Kode Risiko"] = ""
     for i, row in df.iterrows():
@@ -83,58 +81,60 @@ def generate_risk_codes(df: pd.DataFrame) -> pd.DataFrame:
 # ======================================================
 
 def modul_ambang_batas(total_aset: int):
-    """Hitung ambang batas risiko (capacity, appetite, tolerance, limit)."""
     if total_aset is None or total_aset <= 0:
         return None, None
-
     risk_capacity = int(total_aset * 0.15)
     risk_appetite = int(0.3 * risk_capacity)
     risk_tolerance = int(0.4 * risk_capacity)
     limit_risk = int(0.2 * risk_capacity)
-
     hasil = pd.DataFrame({
-        "Ambang Batas": [
-            "Total Aset", "Risk Capacity", "Risk Appetite", "Risk Tolerance", "Limit Risiko"
-        ],
+        "Ambang Batas": ["Total Aset","Risk Capacity","Risk Appetite","Risk Tolerance","Limit Risiko"],
         "Nilai": [total_aset, risk_capacity, risk_appetite, risk_tolerance, limit_risk],
-        "Rumus Perhitungan": [
-            "-",
-            "15% dari Total Aset",
-            "30% dari Risk Capacity",
-            "40% dari Risk Capacity",
-            "20% dari Risk Capacity"
-        ]
+        "Rumus Perhitungan": ["-","15% dari Total Aset","30% dari Risk Capacity","40% dari Risk Capacity","20% dari Risk Capacity"]
     })
     return hasil, limit_risk
 
 # ======================================================
-# Metrix (Editor)
+# Metrix (Editor) — dengan "Parameter Kunci"
 # ======================================================
+
+METRIX_COLUMNS = [
+    "Kode Risiko",
+    "Kategori Risiko T2 & T3 KBUMN",
+    "Risk Appetite Statement",
+    "Sikap Terhadap Risiko",
+    "Parameter Kunci",          # root cause terpilih
+    "Parameter",
+    "Satuan Ukuran",
+    "Nilai Batasan/Limit",
+]
+
+def ensure_metrix_columns(df: pd.DataFrame) -> pd.DataFrame:
+    for col in METRIX_COLUMNS:
+        if col not in df.columns:
+            df[col] = ""
+    return df[METRIX_COLUMNS]
 
 def modul_metrix_strategi_risiko():
     st.subheader("📝 Metrix Strategi Risiko (Editor Manual)")
     if "metrix_strategi" not in st.session_state:
-        st.session_state["metrix_strategi"] = pd.DataFrame(columns=[
-            "Kode Risiko", "Kategori Risiko T2 & T3 KBUMN", "Risk Appetite Statement",
-            "Sikap Terhadap Risiko", "Parameter", "Satuan Ukuran", "Nilai Batasan/Limit"
-        ])
+        st.session_state["metrix_strategi"] = pd.DataFrame(columns=METRIX_COLUMNS)
 
-    df_display = st.session_state["metrix_strategi"].copy()
+    df_display = ensure_metrix_columns(st.session_state["metrix_strategi"].copy())
     if "Kode Risiko" not in df_display.columns:
         df_display["Kode Risiko"] = ""
     df_display.insert(0, "No", range(1, len(df_display)+1))
 
     edited = st.data_editor(
-        df_display,
-        key="metrix_strategi_editor",
-        num_rows="dynamic",
-        use_container_width=True
+        df_display, key="metrix_strategi_editor",
+        num_rows="dynamic", use_container_width=True
     )
 
     if st.button("🔄 Update Data", key="btn_update_metrix"):
         df_updated = edited.copy()
         if "No" in df_updated.columns:
             df_updated = df_updated.drop(columns=["No"])
+        df_updated = ensure_metrix_columns(df_updated)
         df_updated = generate_risk_codes(df_updated)
         st.session_state["metrix_strategi"] = df_updated.copy()
         st.session_state["copy_metrix_strategi_risiko"] = df_updated.copy()
@@ -149,7 +149,6 @@ def tampilkan_taksonomi_risiko_relevan():
     with st.expander("Pilih item risiko yang relevan per kategori", expanded=True):
 
         if "selected_taxonomi" not in st.session_state:
-            # list of dict: {"kategori": "...", "risiko": "..."}
             st.session_state["selected_taxonomi"] = []
 
         current = st.session_state["selected_taxonomi"]
@@ -175,11 +174,8 @@ def tampilkan_taksonomi_risiko_relevan():
                 key = f"chk_{cat_slug}_{item_slug}"
                 checked_default = (category, r) in new_selection
                 checked = st.checkbox(r, value=checked_default, key=key)
-                if checked:
-                    new_selection.add((category, r))
-                else:
-                    new_selection.discard((category, r))
-
+                if checked: new_selection.add((category, r))
+                else:       new_selection.discard((category, r))
             st.write("---")
 
         st.session_state["selected_taxonomi"] = [
@@ -196,15 +192,13 @@ def tampilkan_taksonomi_risiko_relevan():
                 st.write(f"{i}. {d['kategori']} — {d['risiko']}")
         else:
             st.info("Belum ada pilihan.")
-
         return TAXONOMY
 
 # ======================================================
-# AI Helpers
+# OpenAI Wrapper
 # ======================================================
 
-def get_gpt_response(prompt, system_message="", model="gpt-4", temperature=0.4, max_tokens=3000):
-    """Wrapper OpenAI ChatCompletion (pastikan OPENAI_API_KEY ada di env)."""
+def get_gpt_response(prompt, system_message="", model="gpt-4", temperature=0.35, max_tokens=3500):
     try:
         resp = openai.ChatCompletion.create(
             model=model,
@@ -220,15 +214,10 @@ def get_gpt_response(prompt, system_message="", model="gpt-4", temperature=0.4, 
         return f"❌ Error saat menghubungi GPT: {e}"
 
 # ======================================================
-# (BARU) AI: REKOMENDASI PENYEBAB UTAMA → PILIH PENYEBAB
+# AI: Rekomendasi 3 Penyebab Utama → Pilih Penyebab
 # ======================================================
 
 def ai_rekomendasi_penyebab_utama():
-    """
-    Menghasilkan 3 rekomendasi penyebab utama untuk setiap risiko yang dipilih.
-    Simpan di st.session_state["root_cause_options"] sebagai dict:
-      { "<kategori>|<risiko>": ["causal-1","causal-2","causal-3"], ... }
-    """
     st.subheader("🧠 AI: Rekomendasi Penyebab Utama")
     selected = st.session_state.get("selected_taxonomi", [])
     if not selected:
@@ -241,20 +230,13 @@ def ai_rekomendasi_penyebab_utama():
     if st.button("🔍 Dapatkan 3 Penyebab Utama per Risiko", key="btn_get_causes"):
         progress = st.progress(0, text="📡 Menyiapkan permintaan...")
         try:
-            progress.progress(20, "📄 Menyusun prompt...")
-
-            # Siapkan payload sederhana
             payload = {
-                "risks_selected": selected,  # [{"kategori": "...", "risiko": "..."}]
+                "risks_selected": selected,
                 "expected_format": [
-                    {
-                        "kategori": "🖥️ Operational Risk",
-                        "risiko": "Cyber Attack Sistem Informasi",
-                        "penyebab_utama": ["..", "..", ".."]
-                    }
+                    {"kategori":"🖥️ Operational Risk","risiko":"Cyber Attack Sistem Informasi",
+                     "penyebab_utama":["..","..",".."]}
                 ]
             }
-
             prompt = f"""
 Berikut daftar risiko yang dipilih user (JSON):
 {json.dumps(payload, indent=2, ensure_ascii=False)}
@@ -266,33 +248,23 @@ TUGAS:
     "risiko": "...",
     "penyebab_utama": ["Penyebab-1", "Penyebab-2", "Penyebab-3"]
   }}
-- Hanya balas dengan JSON array valid (tanpa teks lain).
-- Penyebab harus spesifik, actionable, dan menjelaskan sumber akar (people/process/technology/external).
+- Hanya balas JSON array valid (tanpa teks lain).
+- Penyebab harus spesifik, actionable, dan mewakili sumber akar (people/process/technology/external).
 """
-
             progress.progress(45, "🧠 Menghubungi GPT...")
             ai_text = get_gpt_response(
-                prompt,
-                system_message="Anda asisten AI untuk analisis risiko perusahaan pelabuhan.",
-                temperature=0.3,
-                max_tokens=3000
+                prompt, system_message="Anda asisten AI risk management.", temperature=0.3, max_tokens=3000
             )
-
             progress.progress(65, "📥 Parsing respons AI...")
             data = extract_json(ai_text)
-            if not data:
-                raise ValueError("Respons AI tidak mengandung JSON valid.")
+            if not data: raise ValueError("Respons AI tidak mengandung JSON valid.")
 
-            # Simpan ke state
             options = {}
             for row in data:
-                kategori = row.get("kategori")
-                risiko = row.get("risiko")
+                key = f"{row.get('kategori')}|{row.get('risiko')}"
                 causes = row.get("penyebab_utama", [])
-                if kategori and risiko and isinstance(causes, list):
-                    key = f"{kategori}|{risiko}"
-                    options[key] = causes[:3]  # ambil maksimal 3
-
+                if key and isinstance(causes, list):
+                    options[key] = causes[:3]
             st.session_state["root_cause_options"] = options
             progress.progress(100, "✅ Penyebab utama berhasil diambil.")
             st.success("✅ Rekomendasi 3 penyebab utama per risiko sudah tersedia.")
@@ -300,22 +272,13 @@ TUGAS:
             st.error(f"❌ Gagal mengambil rekomendasi penyebab: {e}")
 
 def ui_pilih_penyebab_utama():
-    """
-    Tampilkan UI pilihan penyebab utama per risiko.
-    Simpan pilihan user di st.session_state["root_cause_selected"]:
-      { "<kategori>|<risiko>": "<selected_cause>" }
-    """
     st.subheader("🧩 Pilih Penyebab Utama per Risiko")
     options = st.session_state.get("root_cause_options", {})
     selected = st.session_state.get("selected_taxonomi", [])
-
     if not selected:
-        st.info("Belum ada risiko yang dipilih.")
-        return
-
+        st.info("Belum ada risiko yang dipilih."); return
     if not options:
-        st.info("Belum ada rekomendasi penyebab. Tekan tombol 'Dapatkan 3 Penyebab Utama per Risiko' di atas.")
-        return
+        st.info("Belum ada rekomendasi penyebab. Klik tombol di atas."); return
 
     if "root_cause_selected" not in st.session_state:
         st.session_state["root_cause_selected"] = {}
@@ -325,121 +288,270 @@ def ui_pilih_penyebab_utama():
         key = f"{kategori}|{risiko}"
         daftar = options.get(key, [])
         st.markdown(f"**{kategori} — {risiko}**")
-
         if daftar:
-            # radio satu pilihan (bisa diubah ke selectbox/multiselect bila perlu)
             default_idx = 0
             if key in st.session_state["root_cause_selected"]:
-                try:
-                    default_idx = daftar.index(st.session_state["root_cause_selected"][key])
-                except ValueError:
-                    default_idx = 0
+                try: default_idx = daftar.index(st.session_state["root_cause_selected"][key])
+                except ValueError: default_idx = 0
             choice = st.radio(
-                "Pilih penyebab utama:",
-                daftar,
+                "Pilih penyebab utama:", daftar,
                 index=default_idx if default_idx < len(daftar) else 0,
                 key=_slug(f"rc_{key}")
             )
             st.session_state["root_cause_selected"][key] = choice
         else:
-            st.warning("AI belum memberikan opsi penyebab untuk item ini.")
-
+            st.warning("AI belum memberi opsi penyebab untuk item ini.")
         st.write("---")
 
 # ======================================================
-# (DISESUAIKAN) AI: Saran Metrix berdasarkan Penyebab Utama terpilih
+# 🔥 BARU: Minta AI membangun PETA POLA untuk Auto-Validation/Auto-Fix
+# ======================================================
+
+def ai_generate_param_templates():
+    """
+    Minta AI mengembalikan daftar pola (regex) → (parameter, satuan, default_limit)
+    yang relevan dengan kumpulan 'penyebab utama' terpilih.
+    Simpan di st.session_state["param_templates_ai"] = [{"pattern": "...", "parameter": "...", "satuan": "...", "limit": "..."}]
+    """
+    st.subheader("🧩 AI Parameter Templates (regex → parameter/satuan/limit)")
+    selected_causes = st.session_state.get("root_cause_selected", {})
+    if not selected_causes:
+        st.info("Pilih penyebab utama dulu, baru generate template."); return
+
+    # Slice unique causes to avoid duplicates
+    causes = sorted(set(selected_causes.values()))
+    if st.button("🛠️ Generate Template dari AI", key="btn_gen_templates"):
+        try:
+            sample_out = [{
+                "pattern": r"(phishing|social\s*engineering)",
+                "parameter": "CTR phishing yang klik/submit",
+                "satuan": "%",
+                "limit": "<= 1% per kuartal"
+            }]
+            prompt = f"""
+Saya punya daftar 'penyebab utama risiko' (Indonesia). Turunkan daftar TEMPLATE berbasis regex,
+di mana setiap item berisi:
+- "pattern": REGEX yang cocok untuk variasi frasa penyebab (huruf kecil)
+- "parameter": indikator terukur yang langsung relevan dengan penyebab tsb
+- "satuan": satuan ukur konsisten dengan parameter (%, hari, jam, kasus/bulan, Rp, dll.)
+- "limit": batas realistis (<=, >=, =, dsb) selaras dengan parameter
+
+Balas HANYA JSON array valid (tanpa teks lain). Hindari pola terlalu umum seperti ".*".
+Gunakan 8–18 template yang menutup keseluruhan causes berikut:
+{json.dumps(causes, indent=2, ensure_ascii=False)}
+
+Contoh format satu item (jangan copy persis, hanya formatnya):
+{json.dumps(sample_out, indent=2, ensure_ascii=False)}
+"""
+            ai_text = get_gpt_response(
+                prompt,
+                system_message="Anda asisten AI untuk risk KPI design. Hasil wajib JSON array valid.",
+                temperature=0.35, max_tokens=3200
+            )
+            data = extract_json(ai_text)
+            if not data or not isinstance(data, list):
+                raise ValueError("Output AI bukan JSON array valid.")
+            # minimal sanitasi kolom
+            cleaned = []
+            for d in data:
+                pattern = str(d.get("pattern","")).strip()
+                param   = str(d.get("parameter","")).strip()
+                unit    = str(d.get("satuan","")).strip()
+                limit   = str(d.get("limit","")).strip()
+                if pattern and param and unit and limit:
+                    cleaned.append({"pattern": pattern, "parameter": param, "satuan": unit, "limit": limit})
+            if not cleaned:
+                raise ValueError("Template kosong setelah pembersihan.")
+            st.session_state["param_templates_ai"] = cleaned
+            st.success(f"✅ {len(cleaned)} template AI tersimpan.")
+            st.json(cleaned)  # preview
+        except Exception as e:
+            st.error(f"❌ Gagal generate template: {e}")
+
+# Helper memakai template AI
+def _match_template_ai(cause_l: str):
+    """
+    Kembalikan (parameter, satuan, limit) dari template AI yang match.
+    Jika banyak yang match, ambil yang pertama.
+    """
+    templates = st.session_state.get("param_templates_ai", [])
+    for t in templates:
+        patt = t.get("pattern", "")
+        try:
+            if re.search(patt, cause_l, flags=re.IGNORECASE):
+                return t["parameter"], t["satuan"], t["limit"]
+        except re.error:
+            # abaikan regex invalid dari AI
+            continue
+    return None, None, None
+
+def _keywords(text: str):
+    toks = re.findall(r"[A-Za-zÀ-ÿ\u00C0-\u024F\u1E00-\u1EFF\u0600-\u06FF\u0900-\u097F]+", str(text).lower())
+    return [t for t in toks if len(t) > 3]
+
+def check_relation_to_cause(df: pd.DataFrame):
+    """
+    Validasi keterkaitan Parameter/Satuan/LImit terhadap Parameter Kunci
+    — via (1) match regex template AI, (2) keyword overlap ringan.
+    """
+    templates = st.session_state.get("param_templates_ai", [])
+    rows = []
+    for i, r in ensure_metrix_columns(df).iterrows():
+        cause = str(r.get("Parameter Kunci",""))
+        param = str(r.get("Parameter",""))
+        unit  = str(r.get("Satuan Ukuran",""))
+        limit = str(r.get("Nilai Batasan/Limit",""))
+        cause_l = cause.lower()
+        # 1) regex match?
+        regex_ok = False
+        for t in templates:
+            try:
+                if re.search(t["pattern"], cause_l, flags=re.IGNORECASE):
+                    regex_ok = True
+                    break
+            except re.error:
+                pass
+        # 2) keyword overlap ringan
+        kws = set(_keywords(cause_l))
+        hit = sum(1 for k in kws if k in param.lower() or k in unit.lower() or k in limit.lower())
+        related = regex_ok or (hit >= 1)
+        rows.append({
+            "idx": i, "Parameter Kunci": cause, "Parameter": param,
+            "Satuan Ukuran": unit, "Nilai Batasan/Limit": limit,
+            "Regex Match?": "✅" if regex_ok else "—",
+            "Keyword Match": hit,
+            "Relasi OK?": "✅" if related else "❗",
+        })
+    return pd.DataFrame(rows)
+
+def autofix_unrelated_rows(df: pd.DataFrame):
+    """
+    Auto-fix memakai template AI:
+      - cari template match ke Parameter Kunci
+      - kalau ketemu → set Parameter/Satuan/Limit dari template
+      - kalau tidak → minta AI satu-per-satu untuk rekomendasi spesifik baris itu (safety net)
+    """
+    df = ensure_metrix_columns(df.copy())
+    for i, r in df.iterrows():
+        cause = str(r.get("Parameter Kunci",""))
+        param = str(r.get("Parameter","")).strip()
+        unit  = str(r.get("Satuan Ukuran","")).strip()
+        limit = str(r.get("Nilai Batasan/Limit","")).strip()
+
+        # cek relasi dulu
+        report = check_relation_to_cause(df.loc[[i]])
+        if report.iloc[0]["Relasi OK?"] == "✅":
+            continue
+
+        # 1) coba pakai template AI
+        p,u,l = _match_template_ai(cause.lower())
+        if p and u and l:
+            df.at[i,"Parameter"] = p
+            df.at[i,"Satuan Ukuran"] = u
+            df.at[i,"Nilai Batasan/Limit"] = l
+            continue
+
+        # 2) fallback: tanya AI khusus baris ini
+        try:
+            prompt = f"""
+Penyebab utama (Parameter Kunci): {cause}
+
+TUGAS:
+- Turunkan satu set:
+  - "parameter": indikator terukur dan spesifik yang terkait langsung dengan penyebab
+  - "satuan": satuan ukur yang sesuai (%, hari, jam, kasus/bulan, Rp, dll.)
+  - "limit": batas realistis (<=, >=, =, dsb) yang sejalan dengan parameter
+- Balas HANYA JSON array 1 item, contoh:
+  [{{"parameter":"...","satuan":"...","limit":"..."}}]
+"""
+            ai_text = get_gpt_response(
+                prompt, system_message="Anda AI untuk desain KPI risiko. Jawab JSON valid.",
+                temperature=0.35, max_tokens=600
+            )
+            arr = extract_json(ai_text)
+            if isinstance(arr, list) and arr:
+                rec = arr[0]
+                if rec.get("parameter") and rec.get("satuan") and rec.get("limit"):
+                    df.at[i,"Parameter"] = rec["parameter"]
+                    df.at[i,"Satuan Ukuran"] = rec["satuan"]
+                    df.at[i,"Nilai Batasan/Limit"] = rec["limit"]
+        except Exception:
+            pass
+    return df
+
+# ======================================================
+# AI: Metrix dari Penyebab Utama (Parameter Kunci)
 # ======================================================
 
 def saran_gpt_metrix_strategi_risiko():
-    st.markdown("### 🤖 Saran AI: Metrix Strategi Risiko (berdasarkan penyebab utama)")
+    st.markdown("### 🤖 Saran AI: Metrix Strategi Risiko (turunan dari *Parameter Kunci*)")
 
     selected_taxonomies = st.session_state.get("selected_taxonomi", [])
     if not selected_taxonomies:
-        st.warning("⚠️ Belum ada pilihan taksonomi.")
-        return
+        st.warning("⚠️ Belum ada pilihan taksonomi."); return
 
     selected_causes = st.session_state.get("root_cause_selected", {})
     if not selected_causes:
-        st.warning("⚠️ Belum ada penyebab utama yang dipilih.")
+        st.warning("⚠️ Belum ada penyebab utama yang dipilih."); return
+
+    # Pastikan template AI sudah ada (kalau belum, minta user generate)
+    if not st.session_state.get("param_templates_ai"):
+        st.warning("⚠️ Template AI belum tersedia. Klik 'Generate Template dari AI' di bagian AI Parameter Templates.")
         return
 
-    # Bangun payload terstruktur untuk GPT
     rows = []
     for item in selected_taxonomies:
         kategori, risiko = item["kategori"], item["risiko"]
         key = f"{kategori}|{risiko}"
-        cause = selected_causes.get(key)
-        rows.append({
-            "kategori": kategori,
-            "risiko": risiko,
-            "penyebab_utama_terpilih": cause
-        })
+        cause = selected_causes.get(key, "")
+        rows.append({"kategori": kategori, "risiko": risiko, "penyebab_utama_terpilih": cause})
 
     if st.button("🧮 Bangun Metrix Risiko (AI)", key="btn_call_ai_metrix"):
         progress = st.progress(0, text="📡 Menyiapkan permintaan...")
         try:
-            progress.progress(25, "📄 Menyusun prompt...")
-
             payload = {
                 "risks_with_root_cause": rows,
-                "expected_columns": [
-                    "Kode Risiko",
-                    "Kategori Risiko T2 & T3 KBUMN",
-                    "Risk Appetite Statement",
-                    "Sikap Terhadap Risiko",
-                    "Parameter",
-                    "Satuan Ukuran",
-                    "Nilai Batasan/Limit"
-                ],
-                "guidance": [
-                    "Gunakan 'kategori' langsung untuk kolom 'Kategori Risiko T2 & T3 KBUMN'.",
-                    "Turunkan Parameter, Satuan Ukuran, dan Nilai Limit dari 'penyebab_utama_terpilih' agar actionable.",
-                    "Risk Appetite Statement harus jelas & dapat diukur.",
-                    "Sikap Terhadap Risiko salah satu dari: Strategis, Moderat, Konservatif, Tidak toleran."
+                "expected_columns": METRIX_COLUMNS,
+                "hard_rules": [
+                    "ISI kolom 'Parameter Kunci' dengan persis teks 'penyebab_utama_terpilih'.",
+                    "Kolom 'Parameter' HARUS turunan langsung & terukur dari 'Parameter Kunci'.",
+                    "Kolom 'Satuan Ukuran' HARUS konsisten dengan 'Parameter'.",
+                    "Kolom 'Nilai Batasan/Limit' HARUS realistis & sejalan dengan 'Parameter'.",
+                    "Gunakan 'kategori' untuk 'Kategori Risiko T2 & T3 KBUMN'.",
+                    "Sikap Risiko: Strategis | Moderat | Konservatif | Tidak toleran.",
+                    "Balas HANYA JSON array valid (tanpa teks lain)."
                 ]
             }
 
             prompt = f"""
-Berikut daftar risiko dan penyebab utama terpilih (JSON):
+Bangun Metrix Risiko dari data berikut (JSON):
 {json.dumps(payload, indent=2, ensure_ascii=False)}
 
-TUGAS:
-- Hasilkan satu baris untuk SETIAP entri pada 'risks_with_root_cause'.
-- Balas HANYA dalam bentuk JSON array valid, tanpa teks lain.
-- Kolom persis:
-  - "Kode Risiko" (boleh kosong)
-  - "Kategori Risiko T2 & T3 KBUMN" (ISI DENGAN NILAI 'kategori')
-  - "Risk Appetite Statement"
-  - "Sikap Terhadap Risiko" (Strategis|Moderat|Konservatif|Tidak toleran)
-  - "Parameter"
-  - "Satuan Ukuran"
-  - "Nilai Batasan/Limit"
-- Pastikan Parameter, Satuan Ukuran, dan Nilai Limit konsisten dengan penyebab utama terpilih.
-- JSON wajib valid.
+WAJIB:
+- Kembalikan HANYA JSON array valid berkolom & berurutan:
+  1. "Kode Risiko" (boleh kosong)
+  2. "Kategori Risiko T2 & T3 KBUMN"  (ISI dengan 'kategori')
+  3. "Risk Appetite Statement"
+  4. "Sikap Terhadap Risiko" (Strategis|Moderat|Konservatif|Tidak toleran)
+  5. "Parameter Kunci"               (PERSIS = 'penyebab_utama_terpilih')
+  6. "Parameter"                     (turunan terukur dari Parameter Kunci)
+  7. "Satuan Ukuran"                 (konsisten dengan Parameter)
+  8. "Nilai Batasan/Limit"           (batas numerik yang sejalan dengan Parameter)
+- Semua baris wajib terkait langsung dengan 'Parameter Kunci'.
 """
-
             progress.progress(55, "🧠 Menghubungi GPT...")
             ai_text = get_gpt_response(
                 prompt,
-                system_message="Anda asisten AI untuk analisis risiko perusahaan pelabuhan. Jawaban harus JSON valid.",
-                temperature=0.35,
-                max_tokens=4000
+                system_message="Anda asisten AI risk management. Jawab JSON valid.",
+                temperature=0.35, max_tokens=4000
             )
 
             progress.progress(75, "📥 Parsing respons AI...")
             data = extract_json(ai_text)
-            if not data:
-                raise ValueError("Respons AI tidak mengandung JSON valid.")
+            if not data: raise ValueError("Respons AI tidak mengandung JSON valid.")
 
-            expected_cols = [
-                "Kode Risiko", "Kategori Risiko T2 & T3 KBUMN",
-                "Risk Appetite Statement", "Sikap Terhadap Risiko",
-                "Parameter", "Satuan Ukuran", "Nilai Batasan/Limit"
-            ]
             df = pd.DataFrame.from_records(data)
-            miss = [c for c in expected_cols if c not in df.columns]
-            if miss:
-                raise ValueError(f"Kolom hilang: {miss}")
+            df = ensure_metrix_columns(df)
 
             # Normalisasi nilai sikap
             valid_att = ["Strategis", "Moderat", "Konservatif", "Tidak toleran"]
@@ -447,15 +559,27 @@ TUGAS:
                 lambda x: x if x in valid_att else "Moderat"
             )
 
+            # ====== VALIDASI & AUTO-FIX berbasis Template AI ======
+            st.markdown("#### 🔎 Validasi Keterkaitan (Template AI + Keyword)")
+            report = check_relation_to_cause(df)
+            st.dataframe(report, use_container_width=True, hide_index=True)
+
+            if (report["Relasi OK?"] == "❗").any():
+                st.warning("Beberapa baris belum related dengan Parameter Kunci. Anda bisa Auto-Fix berbasis Template AI.")
+                if st.button("🛠️ Auto-Fix dengan Template AI", key="btn_autofix"):
+                    df = autofix_unrelated_rows(df)
+                    report2 = check_relation_to_cause(df)
+                    st.success("✅ Auto-Fix diterapkan. Hasil cek ulang:")
+                    st.dataframe(report2, use_container_width=True, hide_index=True)
+
             df = df.reset_index(drop=True)
             df = generate_risk_codes(df)
-
             st.session_state["metrix_strategi"] = df.copy()
             st.session_state["temp_metrix_strategi_risiko"] = df.copy()
             st.session_state["copy_metrix_strategi_risiko"] = df.copy()
 
             progress.progress(100, "✅ Selesai!")
-            st.success("✅ Metrix Risiko berbasis penyebab utama berhasil dibuat.")
+            st.success("✅ Metrix Risiko dibuat & diverifikasi (berbasis Template AI).")
         except Exception as e:
             st.error(f"❌ Gagal membangun Metrix: {e}")
 
@@ -466,8 +590,6 @@ TUGAS:
 def save_and_download_strategi_risiko_combined():
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     kode_perusahaan = st.session_state.get("kode_perusahaan", "Unknown")
-
-    # Folder server (opsional)
     folder_path = "C:/saved"
     try:
         os.makedirs(folder_path, exist_ok=True)
@@ -480,7 +602,9 @@ def save_and_download_strategi_risiko_combined():
     df_copy_ambang = st.session_state.get("copy_ambang_batas_risiko", pd.DataFrame())
     limit_value = st.session_state.get("copy_limit_risiko", "-")
     df_limit = pd.DataFrame([{"Limit Risiko": limit_value}])
-    df_metrix_copy = st.session_state.get("copy_metrix_strategi_risiko", pd.DataFrame())
+    df_metrix_copy = ensure_metrix_columns(
+        st.session_state.get("copy_metrix_strategi_risiko", pd.DataFrame())
+    )
 
     output = io.BytesIO()
     try:
@@ -489,16 +613,13 @@ def save_and_download_strategi_risiko_combined():
                 df_copy_ambang.to_excel(w, sheet_name="Copy Ambang Batas Risiko", index=False)
                 df_limit.to_excel(w, sheet_name="Copy Limit Risiko", index=False)
                 df_metrix_copy.to_excel(w, sheet_name="Copy Metrix Strategi Risiko", index=False)
-
         with pd.ExcelWriter(output, engine="xlsxwriter") as w2:
             df_copy_ambang.to_excel(w2, sheet_name="Copy Ambang Batas Risiko", index=False)
             df_limit.to_excel(w2, sheet_name="Copy Limit Risiko", index=False)
             df_metrix_copy.to_excel(w2, sheet_name="Copy Metrix Strategi Risiko", index=False)
-
         output.seek(0)
         if server_file_path:
             st.success(f"✅ File tersimpan di server: `{server_file_path}`")
-
         st.download_button(
             label="⬇️ Unduh Strategi Risiko (Excel)",
             data=output,
@@ -521,10 +642,8 @@ def main():
     st.session_state.setdefault("copy_ambang_batas_risiko", pd.DataFrame())
     st.session_state.setdefault("copy_limit_risiko", "-")
     st.session_state.setdefault("copy_metrix_strategi_risiko", pd.DataFrame())
-    st.session_state.setdefault("metrix_strategi", pd.DataFrame(columns=[
-        "Kode Risiko", "Kategori Risiko T2 & T3 KBUMN", "Risk Appetite Statement",
-        "Sikap Terhadap Risiko", "Parameter", "Satuan Ukuran", "Nilai Batasan/Limit"
-    ]))
+    st.session_state.setdefault("metrix_strategi", pd.DataFrame(columns=METRIX_COLUMNS))
+    st.session_state.setdefault("param_templates_ai", [])
 
     if uploaded_file is not None:
         try:
@@ -536,11 +655,11 @@ def main():
                 "Copy Limit Risiko",
                 "Copy Metrix Strategi Risiko"
             ]
-
             profil_sheets, strategi_sheets = [], []
             for s in sheet_names:
                 (strategi_sheets if s in expected_strategi else profil_sheets).append(s)
 
+            # Profil perusahaan
             if profil_sheets:
                 profil_data = {}
                 for s in profil_sheets:
@@ -549,6 +668,7 @@ def main():
                 st.session_state["copy2_profil_perusahaan"] = profil_data
                 st.success(f"✅ Profil Perusahaan dimuat ({len(profil_data)} sheet).")
 
+            # Strategi
             if "Copy Ambang Batas Risiko" in strategi_sheets:
                 st.session_state["copy_ambang_batas_risiko"] = xls.parse("Copy Ambang Batas Risiko")
 
@@ -560,7 +680,7 @@ def main():
                     st.warning("⚠️ Sheet 'Copy Limit Risiko' ada, tapi kolom tidak sesuai.")
 
             if "Copy Metrix Strategi Risiko" in strategi_sheets:
-                df_metrix = xls.parse("Copy Metrix Strategi Risiko")
+                df_metrix = ensure_metrix_columns(xls.parse("Copy Metrix Strategi Risiko"))
                 st.session_state["copy_metrix_strategi_risiko"] = df_metrix.copy()
                 st.session_state["metrix_strategi"] = df_metrix.copy()
 
@@ -585,7 +705,6 @@ def main():
                 kode_row = informasi_df[informasi_df["Data yang dibutuhkan"].str.contains("Kode Perusahaan", case=False, na=False)]
             except Exception:
                 kode_row = pd.DataFrame()
-
             try:
                 aset_row = informasi_df[informasi_df["Data yang dibutuhkan"].str.contains("Total Aset", case=False, na=False)]
             except Exception:
@@ -615,22 +734,19 @@ def main():
     except Exception:
         total_aset_val = None
 
-    # Tabel Ambang Batas (editable)
     st.markdown("### 📊 Ambang Batas Risiko")
     df_ambang = st.session_state.get("copy_ambang_batas_risiko", pd.DataFrame()).copy()
     if df_ambang.empty:
         df_ambang = pd.DataFrame({
-            "Ambang Batas": ["Total Aset", "Risk Capacity", "Risk Appetite", "Risk Tolerance", "Limit Risiko"],
-            "Nilai": ["-", "-", "-", "-", "-"]
+            "Ambang Batas": ["Total Aset","Risk Capacity","Risk Appetite","Risk Tolerance","Limit Risiko"],
+            "Nilai": ["-","-","-","-","-"]
         })
     df_ambang = df_ambang.reset_index(drop=True)
     df_ambang.insert(0, "No", range(1, len(df_ambang)+1))
 
     edited_ambang = st.data_editor(
-        df_ambang[["Ambang Batas", "Nilai"]],
-        key="editor_ambang_batas",
-        num_rows="fixed",
-        hide_index=True
+        df_ambang[["Ambang Batas","Nilai"]], key="editor_ambang_batas",
+        num_rows="fixed", hide_index=True
     )
 
     c1, c2 = st.columns(2)
@@ -639,7 +755,6 @@ def main():
             if not edited_ambang.empty:
                 df_ambang.loc[:, "Nilai"] = edited_ambang["Nilai"]
                 st.session_state["copy_ambang_batas_risiko"] = df_ambang.drop(columns=["No"]).copy()
-                # refresh limit
                 try:
                     val = st.session_state["copy_ambang_batas_risiko"].loc[
                         st.session_state["copy_ambang_batas_risiko"]["Ambang Batas"]=="Limit Risiko", "Nilai"
@@ -656,7 +771,6 @@ def main():
             if total_aset_val and total_aset_val > 0:
                 hasil, limit_risk = modul_ambang_batas(total_aset_val)
                 if hasil is not None:
-                    # merge dengan edit terakhir jika ada
                     try:
                         df_edit_state = st.session_state["editor_ambang_batas"]
                         if "Ambang Batas" in df_edit_state.columns and "Nilai" in df_edit_state.columns:
@@ -668,7 +782,6 @@ def main():
                                     ].values[0]
                     except Exception:
                         pass
-
                     st.session_state["copy_ambang_batas_risiko"] = hasil.copy()
                     st.session_state["copy_limit_risiko"] = limit_risk
                     st.success("✅ Ambang Batas dihitung & diperbarui.")
@@ -706,7 +819,10 @@ def main():
     # === 3) Pilih Penyebab Utama ===
     ui_pilih_penyebab_utama()
 
-    # === 4) AI Metrix berbasis Penyebab Utama ===
+    # === 3.5) AI Parameter Templates (regex→parameter/satuan/limit) ===
+    ai_generate_param_templates()
+
+    # === 4) AI Metrix berbasis Penyebab Utama + Validasi/Auto-Fix Template AI ===
     saran_gpt_metrix_strategi_risiko()
 
     # === 5) Editor Metrix Manual (opsional revisi) ===
@@ -715,6 +831,5 @@ def main():
     # === 6) Export Excel ===
     save_and_download_strategi_risiko_combined()
 
-# Debugging lokal
 if __name__ == "__main__":
     main()
