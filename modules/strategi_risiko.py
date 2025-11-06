@@ -5,28 +5,91 @@ import tempfile
 import re
 import openai
 import json
-import uuid  # (opsional) bila ingin dipakai kemudian
+import uuid  # opsional
 from datetime import datetime
-from modules.utils import get_user_file  # (opsional) jika ingin simpan per-user
+# from modules.utils import get_user_file  # opsional bila ingin simpan per-user
 import io
+from collections import defaultdict
 
 # =========================
 # Helpers & Utilities
 # =========================
 
-def extract_json(response_text: str):
-    """Ambil array JSON pertama dari teks (tahan terhadap code-fence)."""
-    try:
-        cleaned = re.sub(r"```(?:json)?|```", "", str(response_text), flags=re.IGNORECASE)
-        m = re.search(r"\[.*?\]", cleaned, flags=re.DOTALL)  # non-greedy
-        if not m:
-            return None
-        return json.loads(m.group(0))
-    except json.JSONDecodeError:
+def extract_json_robust(text: str):
+    """
+    Ambil JSON array valid dari text:
+    - Bersihkan code-fence ``` / ```json
+    - Coba parse keseluruhan teks dulu
+    - Cari array pertama dengan bracket stack (lebih andal)
+    - Fallback: jika hanya object {..}, bungkus ke dalam array
+    Return: list (JSON array) atau None.
+    """
+    if text is None:
         return None
 
+    # bersihkan code-fence
+    cleaned = re.sub(r"```(?:json)?", "", str(text), flags=re.IGNORECASE)
+    cleaned = cleaned.replace("```", "").strip()
+
+    # 1) kalau seluruh teks sudah JSON array/object murni
+    for candidate in (cleaned, cleaned.strip()):
+        try:
+            obj = json.loads(candidate)
+            if isinstance(obj, list):
+                return obj
+            if isinstance(obj, dict):
+                return [obj]
+        except Exception:
+            pass
+
+    # 2) cari blok [ ... ] pertama dengan bracket stack
+    s = cleaned
+    start_idx = None
+    stack = 0
+    for i, ch in enumerate(s):
+        if ch == '[':
+            start_idx = i
+            stack = 1
+            break
+    if start_idx is not None:
+        for j in range(start_idx + 1, len(s)):
+            if s[j] == '[':
+                stack += 1
+            elif s[j] == ']':
+                stack -= 1
+                if stack == 0:
+                    snippet = s[start_idx:j+1]
+                    try:
+                        arr = json.loads(snippet)
+                        if isinstance(arr, list):
+                            return arr
+                    except Exception:
+                        pass
+                    break  # hentikan pencarian utama
+
+    # 3) fallback: cari object { ... } lalu bungkus
+    obj_start = s.find('{')
+    if obj_start != -1:
+        stack = 0
+        for j in range(obj_start, len(s)):
+            if s[j] == '{':
+                stack += 1
+            elif s[j] == '}':
+                stack -= 1
+                if stack == 0:
+                    snippet = s[obj_start:j+1]
+                    try:
+                        obj = json.loads(snippet)
+                        if isinstance(obj, dict):
+                            return [obj]
+                    except Exception:
+                        pass
+                    break
+
+    return None
+
 def _to_int(s):
-    """Parse angka dari string '1.234.567' / '1,234,567' / '1 234' jadi int. Return None jika gagal."""
+    """Parse '1.234.567' / '1,234,567' / '1 234' jadi int. Return None jika gagal."""
     if s is None:
         return None
     cleaned = re.sub(r"[^\d]", "", str(s))
@@ -51,11 +114,9 @@ def initialize_data():
         st.session_state["ambang_batas"] = default_ambang.copy()
         st.session_state["ambang_batas_temp"] = default_ambang.copy()
 
-    # Tabel metrix default
     st.session_state.setdefault("metrix_strategi", pd.DataFrame(columns=[
-        # Kolom lama dipertahankan agar kompatibel
         "Kode Risiko",
-        "Kategori Risiko T2 & T3 KBUMN",
+        "Kategori Risiko T2 & T3 KBUMN",  # dipakai sbg kolom kompatibel, nilai berisi nama kategori Danantara
         "Risk Appetite Statement",
         "Sikap Terhadap Risiko",
         "Parameter",
@@ -63,7 +124,6 @@ def initialize_data():
         "Nilai Batasan/Limit"
     ]))
 
-    # Salinan state untuk export
     st.session_state.setdefault("copy_ambang_batas_risiko", pd.DataFrame())
     st.session_state.setdefault("copy_limit_risiko", "-")
     st.session_state.setdefault("copy_metrix_strategi_risiko", pd.DataFrame())
@@ -97,7 +157,6 @@ def modul_ambang_batas(total_aset: int):
 
     return hasil_perhitungan, limit_risk
 
-from collections import defaultdict
 def generate_risk_codes(df: pd.DataFrame):
     """
     Hasilkan kode risiko unik dan stabil per kategori (RISK-XXX-001).
@@ -112,7 +171,7 @@ def generate_risk_codes(df: pd.DataFrame):
         if not str(row.get("Kode Risiko", "")).strip():
             kategori = str(row.get("Kategori Risiko T2 & T3 KBUMN", "GEN")).strip()
             key = (kategori[:3].upper() if kategori else "GEN")
-            if not key.isalnum():
+            if not key or not key[0].isalnum():
                 key = "GEN"
             counters[key] += 1
             df.at[i, "Kode Risiko"] = f"RISK-{key}-{counters[key]:03d}"
@@ -123,7 +182,6 @@ def generate_risk_codes(df: pd.DataFrame):
 # =========================
 
 DANANTARA_TAXONOMY = {
-    # gunakan kode sederhana agar tetap ada "kode" & "nama" seperti struktur lama
     "Danantara Risk Taxonomy": [
         {"kode": "DAN-01", "nama": "Strategic Risk"},
         {"kode": "DAN-02", "nama": "Market Risk"},
@@ -140,7 +198,7 @@ def tampilkan_taksonomi_risiko_relevan():
     """UI checklist taksonomi Danantara (menggantikan taksonomi lama)."""
     st.subheader("Taksonomi Risiko (Danantara) 📝")
     with st.expander("**Pilih Kategori Taksonomi Risiko**", expanded=True):
-        # Normalisasi state
+        # normalisasi state
         if isinstance(st.session_state["selected_taxonomi"], str):
             try:
                 st.session_state["selected_taxonomi"] = json.loads(st.session_state["selected_taxonomi"])
@@ -159,11 +217,8 @@ def tampilkan_taksonomi_risiko_relevan():
                 if checked:
                     if item not in new_selection:
                         new_selection.append(item)
-                else:
-                    # jika sebelumnya ada tapi sekarang di-uncheck, tidak ditambahkan
-                    pass
 
-        # Simpan ke state bila berubah
+        # simpan
         if new_selection != selected:
             st.session_state["selected_taxonomi"] = new_selection
 
@@ -178,18 +233,17 @@ def tampilkan_taksonomi_risiko_relevan():
         else:
             st.write("Belum ada pilihan.")
 
-        return DANANTARA_TAXONOMY  # tidak ada duplikasi/return ganda
+        return DANANTARA_TAXONOMY
 
 # =========================
 # OpenAI (robust wrapper)
 # =========================
 
-def get_gpt_response(prompt, system_message="", model="gpt-4o-mini", temperature=0.5, max_tokens=1500):
-    """Kirim prompt ke OpenAI. Gunakan model yang ekonomis & cepat. Batasi token agar JSON utuh."""
+def get_gpt_response(prompt, system_message="", model="gpt-4o-mini", temperature=0.2, max_tokens=1200):
+    """Kirim prompt ke OpenAI. Batasi token agar JSON tak kepotong."""
     try:
         if not os.getenv("OPENAI_API_KEY"):
             return "❌ OPENAI_API_KEY belum diset pada environment."
-        # Kompatibel dengan API lama; jika environment pakai client baru, adaptasikan sesuai kebutuhan.
         resp = openai.ChatCompletion.create(
             model=model,
             messages=[
@@ -213,77 +267,96 @@ def saran_gpt_metrix_strategi_risiko():
         return
 
     if st.button("🔍 Dapatkan Saran AI"):
-        progress = st.progress(0, text="📡 Menyiapkan permintaan ke AI...")
+        status = st.empty()
+        raw_expander = st.expander("🔎 Lihat raw output AI (debug)", expanded=False)
+        status.info("📡 Menyiapkan permintaan ke AI...")
 
-        try:
-            progress.progress(20, "📄 Menyusun prompt...")
-            prompt = f"""
-Berikut adalah daftar kategori risiko (Taksonomi Danantara) yang dipilih pengguna:
+        base_instructions = """
+Anda adalah asisten ERM. BALAS HANYA dengan JSON array valid tanpa teks lain.
+Jangan gunakan bullet, heading, atau catatan di luar JSON.
 
-{json.dumps(selected_taxonomies, indent=4)}
+Format WAJIB: sebuah JSON array of objects. Contoh minimal: [{"a":1}]
 
-TUGAS:
-- WAJIB memberi output untuk setiap kategori.
-- HANYA balas JSON array valid: [{{...}}, {{...}}] tanpa teks tambahan.
-- Kolom wajib:
-  - "Kode Risiko"
-  - "Kategori Risiko T2 & T3 KBUMN"  # gunakan nama kategori Danantara sebagai nilai kolom ini demi kompatibilitas
-  - "Risk Appetite Statement"
-  - "Sikap Terhadap Risiko" (salah satu: "Strategis", "Moderat", "Konservatif", "Tidak toleran")
-  - "Parameter"
-  - "Satuan Ukuran"
-  - "Nilai Batasan/Limit"
-- Jika ragu, isikan berdasarkan praktik umum ERM.
-- Pastikan struktur JSON valid.
+Kolom wajib per item:
+- "Kode Risiko"
+- "Kategori Risiko T2 & T3 KBUMN"    # isi dengan nama kategori Danantara
+- "Risk Appetite Statement"
+- "Sikap Terhadap Risiko"            # salah satu: "Strategis", "Moderat", "Konservatif", "Tidak toleran"
+- "Parameter"
+- "Satuan Ukuran"
+- "Nilai Batasan/Limit"
+
+Aturan:
+- Berikan satu objek untuk SETIAP kategori yang dikirim.
+- Tanpa komentar/pembuka/penutup. JSON murni saja.
 """
 
-            progress.progress(40, "🧠 Menghubungi GPT...")
-            ai_text = get_gpt_response(
-                prompt,
-                system_message="Anda adalah asisten AI yang membantu analisis risiko organisasi.",
-                temperature=0.4,
-                max_tokens=1400
+        user_payload = f"""
+Kategori yang dipilih user (Taksonomi Danantara):
+{json.dumps(selected_taxonomies, indent=2, ensure_ascii=False)}
+
+Keluarkan array JSON sesuai kolom wajib. Pastikan valid secara JSON.
+"""
+
+        def _ask_ai(temp=0.2, max_tokens=1200):
+            return get_gpt_response(
+                prompt=user_payload,
+                system_message=base_instructions,
+                model="gpt-4o-mini",
+                temperature=temp,
+                max_tokens=max_tokens
             )
 
-            progress.progress(60, "📥 Parsing respons AI...")
-            recommended_data = extract_json(ai_text)
-            if not recommended_data:
-                raise ValueError("Respons AI tidak valid atau tidak mengandung JSON array.")
+        # ---- Try #1 ----
+        status.info("🧠 Menghubungi AI (percobaan 1)...")
+        ai_text = _ask_ai()
+        raw_expander.code(ai_text or "", language="json")
 
-            expected_columns = [
-                "Kode Risiko", "Kategori Risiko T2 & T3 KBUMN",
-                "Risk Appetite Statement", "Sikap Terhadap Risiko",
-                "Parameter", "Satuan Ukuran", "Nilai Batasan/Limit"
-            ]
+        data = extract_json_robust(ai_text)
+        if data is None:
+            # ---- Try #2 (retry lebih keras) ----
+            status.warning("♻️ Respons belum JSON murni. Mencoba ulang dengan instruksi lebih ketat...")
+            harder = base_instructions + "\n\nPENTING: Outputkan HANYA array JSON. Jika gagal, outputkan [] tanpa teks lain."
+            def _ask_ai_harder():
+                return get_gpt_response(
+                    prompt=user_payload,
+                    system_message=harder,
+                    model="gpt-4o-mini",
+                    temperature=0.0,
+                    max_tokens=1000
+                )
+            ai_text2 = _ask_ai_harder()
+            raw_expander.code(ai_text2 or "", language="json")
+            data = extract_json_robust(ai_text2)
 
-            df_recommended = pd.DataFrame.from_records(recommended_data)
+        if data is None:
+            st.error("⚠️ Format output AI tidak valid: tidak ditemukan JSON array. Coba ulang.")
+            return
 
-            # Validasi kolom
-            missing_cols = [c for c in expected_columns if c not in df_recommended.columns]
-            if missing_cols:
-                raise ValueError(f"Kolom berikut tidak ditemukan dalam hasil AI: {missing_cols}")
+        # Validasi & normalisasi
+        expected_columns = [
+            "Kode Risiko", "Kategori Risiko T2 & T3 KBUMN",
+            "Risk Appetite Statement", "Sikap Terhadap Risiko",
+            "Parameter", "Satuan Ukuran", "Nilai Batasan/Limit"
+        ]
+        df_recommended = pd.DataFrame.from_records(data)
 
-            # Normalisasi nilai 'Sikap Terhadap Risiko'
-            valid_attitudes = ["Strategis", "Moderat", "Konservatif", "Tidak toleran"]
-            df_recommended["Sikap Terhadap Risiko"] = df_recommended["Sikap Terhadap Risiko"].apply(
-                lambda x: x if x in valid_attitudes else "Moderat"
-            )
+        # Tambahkan kolom yang hilang
+        for c in expected_columns:
+            if c not in df_recommended.columns:
+                df_recommended[c] = ""
 
-            df_recommended = df_recommended.reset_index(drop=True)
+        # Normalisasi Sikap
+        valid_attitudes = ["Strategis", "Moderat", "Konservatif", "Tidak toleran"]
+        df_recommended["Sikap Terhadap Risiko"] = df_recommended["Sikap Terhadap Risiko"].apply(
+            lambda x: x if x in valid_attitudes else "Moderat"
+        )
 
-            progress.progress(85, "💾 Menyimpan hasil ke session_state...")
+        # Simpan ke state
+        st.session_state["metrix_strategi"] = df_recommended.reset_index(drop=True).copy()
+        st.session_state["copy_metrix_strategi_risiko"] = st.session_state["metrix_strategi"].copy()
 
-            st.session_state["metrix_strategi"] = df_recommended.copy()
-            st.session_state["temp_metrix_strategi_risiko"] = df_recommended.copy()
-            st.session_state["copy_metrix_strategi_risiko"] = df_recommended.copy()
-
-            progress.progress(100, "✅ Selesai!")
-            st.success("✅ Saran AI berhasil ditambahkan dan disalin ke session state.")
-
-        except (json.JSONDecodeError, ValueError) as ve:
-            st.error(f"⚠️ Format output AI tidak valid: {ve}")
-        except Exception as e:
-            st.error(f"❌ Terjadi kesalahan saat menghubungi AI: {e}")
+        st.success("✅ Saran AI berhasil ditambahkan.")
 
 def modul_metrix_strategi_risiko():
     # --- METRIX STRATEGI RISIKO ---
@@ -388,7 +461,7 @@ def main():
             ext = os.path.splitext(file_name)[1]
 
             if ext != ".xlsx":
-                st.error("❌ Format .xls tidak didukung. Silakan simpan sebagai .xlsx.")
+                st.error("❌ Format .xls tidak didukung. Simpan sebagai .xlsx.")
                 return
 
             xls = pd.ExcelFile(uploaded_file, engine="openpyxl")
@@ -442,7 +515,6 @@ def main():
 
             total_known_sheets = profil_sheets + strategi_sheets_found
             unknown_sheets = [s for s in sheet_names if s not in total_known_sheets]
-
             if unknown_sheets:
                 st.warning(f"⚠️ Sheet berikut **tidak dikenali** dan tidak diproses: {', '.join(unknown_sheets)}")
 
@@ -475,7 +547,7 @@ def main():
             except Exception as e:
                 st.warning(f"⚠️ Ada masalah membaca data profil perusahaan: {e}")
 
-            for idx, row in informasi_perusahaan_df.iterrows():
+            for _, row in informasi_perusahaan_df.iterrows():
                 kolom_data = str(row.get("Data yang dibutuhkan", "")).strip()
                 kolom_input = str(row.get("Input Pengguna", "")).strip()
                 st.markdown(f"**{kolom_data}**: {kolom_input}")
