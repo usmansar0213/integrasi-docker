@@ -2,7 +2,8 @@
 # ======================================================
 # Strategi Risiko — Upload, Ambang Batas, Taksonomi (Checkbox),
 # AI Root Causes → Pilih Penyebab → AI Param Templates (regex→parameter/satuan/limit)
-# → AI Metrix (Parameter Kunci) → Validasi + Auto-Fix berbasis Template AI → Editor → Export
+# → AI Metrix (dengan kolom "Penyebab Utama" sebelum "Parameter")
+# → Validasi + Auto-Fix berbasis Template AI → Editor → Export
 # ======================================================
 
 import streamlit as st
@@ -95,7 +96,7 @@ def modul_ambang_batas(total_aset: int):
     return hasil, limit_risk
 
 # ======================================================
-# Metrix (Editor) — dengan "Parameter Kunci"
+# Metrix (Editor) — dengan kolom "Penyebab Utama" SEBELUM "Parameter"
 # ======================================================
 
 METRIX_COLUMNS = [
@@ -103,7 +104,7 @@ METRIX_COLUMNS = [
     "Kategori Risiko T2 & T3 KBUMN",
     "Risk Appetite Statement",
     "Sikap Terhadap Risiko",
-    "Parameter Kunci",          # root cause terpilih
+    "Penyebab Utama",          # <— kolom baru di sini
     "Parameter",
     "Satuan Ukuran",
     "Nilai Batasan/Limit",
@@ -304,21 +305,20 @@ def ui_pilih_penyebab_utama():
         st.write("---")
 
 # ======================================================
-# 🔥 BARU: Minta AI membangun PETA POLA untuk Auto-Validation/Auto-Fix
+# AI Parameter Templates (regex→parameter/satuan/limit) — diminta ke AI
 # ======================================================
 
 def ai_generate_param_templates():
     """
     Minta AI mengembalikan daftar pola (regex) → (parameter, satuan, default_limit)
     yang relevan dengan kumpulan 'penyebab utama' terpilih.
-    Simpan di st.session_state["param_templates_ai"] = [{"pattern": "...", "parameter": "...", "satuan": "...", "limit": "..."}]
+    Simpan ke st.session_state["param_templates_ai"] = [{pattern, parameter, satuan, limit}]
     """
     st.subheader("🧩 AI Parameter Templates (regex → parameter/satuan/limit)")
     selected_causes = st.session_state.get("root_cause_selected", {})
     if not selected_causes:
         st.info("Pilih penyebab utama dulu, baru generate template."); return
 
-    # Slice unique causes to avoid duplicates
     causes = sorted(set(selected_causes.values()))
     if st.button("🛠️ Generate Template dari AI", key="btn_gen_templates"):
         try:
@@ -351,7 +351,6 @@ Contoh format satu item (jangan copy persis, hanya formatnya):
             data = extract_json(ai_text)
             if not data or not isinstance(data, list):
                 raise ValueError("Output AI bukan JSON array valid.")
-            # minimal sanitasi kolom
             cleaned = []
             for d in data:
                 pattern = str(d.get("pattern","")).strip()
@@ -368,12 +367,15 @@ Contoh format satu item (jangan copy persis, hanya formatnya):
         except Exception as e:
             st.error(f"❌ Gagal generate template: {e}")
 
-# Helper memakai template AI
+# ======================================================
+# Validator & Auto-Fix (berbasis kolom "Penyebab Utama")
+# ======================================================
+
+def _keywords(text: str):
+    toks = re.findall(r"[A-Za-zÀ-ÿ\u00C0-\u024F\u1E00-\u1EFF\u0600-\u06FF\u0900-\u097F]+", str(text).lower())
+    return [t for t in toks if len(t) > 3]
+
 def _match_template_ai(cause_l: str):
-    """
-    Kembalikan (parameter, satuan, limit) dari template AI yang match.
-    Jika banyak yang match, ambil yang pertama.
-    """
     templates = st.session_state.get("param_templates_ai", [])
     for t in templates:
         patt = t.get("pattern", "")
@@ -381,27 +383,23 @@ def _match_template_ai(cause_l: str):
             if re.search(patt, cause_l, flags=re.IGNORECASE):
                 return t["parameter"], t["satuan"], t["limit"]
         except re.error:
-            # abaikan regex invalid dari AI
             continue
     return None, None, None
 
-def _keywords(text: str):
-    toks = re.findall(r"[A-Za-zÀ-ÿ\u00C0-\u024F\u1E00-\u1EFF\u0600-\u06FF\u0900-\u097F]+", str(text).lower())
-    return [t for t in toks if len(t) > 3]
-
 def check_relation_to_cause(df: pd.DataFrame):
     """
-    Validasi keterkaitan Parameter/Satuan/LImit terhadap Parameter Kunci
+    Validasi keterkaitan Parameter/Satuan/Limit terhadap 'Penyebab Utama'
     — via (1) match regex template AI, (2) keyword overlap ringan.
     """
     templates = st.session_state.get("param_templates_ai", [])
     rows = []
     for i, r in ensure_metrix_columns(df).iterrows():
-        cause = str(r.get("Parameter Kunci",""))
+        cause = str(r.get("Penyebab Utama",""))
         param = str(r.get("Parameter",""))
         unit  = str(r.get("Satuan Ukuran",""))
         limit = str(r.get("Nilai Batasan/Limit",""))
         cause_l = cause.lower()
+
         # 1) regex match?
         regex_ok = False
         for t in templates:
@@ -411,12 +409,13 @@ def check_relation_to_cause(df: pd.DataFrame):
                     break
             except re.error:
                 pass
-        # 2) keyword overlap ringan
+
+        # 2) keyword overlap
         kws = set(_keywords(cause_l))
         hit = sum(1 for k in kws if k in param.lower() or k in unit.lower() or k in limit.lower())
         related = regex_ok or (hit >= 1)
         rows.append({
-            "idx": i, "Parameter Kunci": cause, "Parameter": param,
+            "idx": i, "Penyebab Utama": cause, "Parameter": param,
             "Satuan Ukuran": unit, "Nilai Batasan/Limit": limit,
             "Regex Match?": "✅" if regex_ok else "—",
             "Keyword Match": hit,
@@ -427,18 +426,17 @@ def check_relation_to_cause(df: pd.DataFrame):
 def autofix_unrelated_rows(df: pd.DataFrame):
     """
     Auto-fix memakai template AI:
-      - cari template match ke Parameter Kunci
+      - cari template match ke 'Penyebab Utama'
       - kalau ketemu → set Parameter/Satuan/Limit dari template
-      - kalau tidak → minta AI satu-per-satu untuk rekomendasi spesifik baris itu (safety net)
+      - kalau tidak → minta AI satu-per-satu untuk rekomendasi spesifik baris itu
     """
     df = ensure_metrix_columns(df.copy())
     for i, r in df.iterrows():
-        cause = str(r.get("Parameter Kunci",""))
+        cause = str(r.get("Penyebab Utama",""))
         param = str(r.get("Parameter","")).strip()
         unit  = str(r.get("Satuan Ukuran","")).strip()
         limit = str(r.get("Nilai Batasan/Limit","")).strip()
 
-        # cek relasi dulu
         report = check_relation_to_cause(df.loc[[i]])
         if report.iloc[0]["Relasi OK?"] == "✅":
             continue
@@ -454,11 +452,11 @@ def autofix_unrelated_rows(df: pd.DataFrame):
         # 2) fallback: tanya AI khusus baris ini
         try:
             prompt = f"""
-Penyebab utama (Parameter Kunci): {cause}
+Penyebab Utama: {cause}
 
 TUGAS:
 - Turunkan satu set:
-  - "parameter": indikator terukur dan spesifik yang terkait langsung dengan penyebab
+  - "parameter": indikator terukur & spesifik terkait langsung penyebab
   - "satuan": satuan ukur yang sesuai (%, hari, jam, kasus/bulan, Rp, dll.)
   - "limit": batas realistis (<=, >=, =, dsb) yang sejalan dengan parameter
 - Balas HANYA JSON array 1 item, contoh:
@@ -480,11 +478,11 @@ TUGAS:
     return df
 
 # ======================================================
-# AI: Metrix dari Penyebab Utama (Parameter Kunci)
+# AI: Metrix dari Penyebab Utama (kolom "Penyebab Utama")
 # ======================================================
 
 def saran_gpt_metrix_strategi_risiko():
-    st.markdown("### 🤖 Saran AI: Metrix Strategi Risiko (turunan dari *Parameter Kunci*)")
+    st.markdown("### 🤖 Saran AI: Metrix Strategi Risiko (turunan dari *Penyebab Utama*)")
 
     selected_taxonomies = st.session_state.get("selected_taxonomi", [])
     if not selected_taxonomies:
@@ -494,7 +492,6 @@ def saran_gpt_metrix_strategi_risiko():
     if not selected_causes:
         st.warning("⚠️ Belum ada penyebab utama yang dipilih."); return
 
-    # Pastikan template AI sudah ada (kalau belum, minta user generate)
     if not st.session_state.get("param_templates_ai"):
         st.warning("⚠️ Template AI belum tersedia. Klik 'Generate Template dari AI' di bagian AI Parameter Templates.")
         return
@@ -513,8 +510,8 @@ def saran_gpt_metrix_strategi_risiko():
                 "risks_with_root_cause": rows,
                 "expected_columns": METRIX_COLUMNS,
                 "hard_rules": [
-                    "ISI kolom 'Parameter Kunci' dengan persis teks 'penyebab_utama_terpilih'.",
-                    "Kolom 'Parameter' HARUS turunan langsung & terukur dari 'Parameter Kunci'.",
+                    "ISI kolom 'Penyebab Utama' dengan persis teks 'penyebab_utama_terpilih'.",
+                    "Kolom 'Parameter' HARUS turunan langsung & terukur dari 'Penyebab Utama'.",
                     "Kolom 'Satuan Ukuran' HARUS konsisten dengan 'Parameter'.",
                     "Kolom 'Nilai Batasan/Limit' HARUS realistis & sejalan dengan 'Parameter'.",
                     "Gunakan 'kategori' untuk 'Kategori Risiko T2 & T3 KBUMN'.",
@@ -533,11 +530,11 @@ WAJIB:
   2. "Kategori Risiko T2 & T3 KBUMN"  (ISI dengan 'kategori')
   3. "Risk Appetite Statement"
   4. "Sikap Terhadap Risiko" (Strategis|Moderat|Konservatif|Tidak toleran)
-  5. "Parameter Kunci"               (PERSIS = 'penyebab_utama_terpilih')
-  6. "Parameter"                     (turunan terukur dari Parameter Kunci)
-  7. "Satuan Ukuran"                 (konsisten dengan Parameter)
-  8. "Nilai Batasan/Limit"           (batas numerik yang sejalan dengan Parameter)
-- Semua baris wajib terkait langsung dengan 'Parameter Kunci'.
+  5. "Penyebab Utama"                 (PERSIS = 'penyebab_utama_terpilih')
+  6. "Parameter"                       (turunan terukur dari Penyebab Utama)
+  7. "Satuan Ukuran"                   (konsisten dengan Parameter)
+  8. "Nilai Batasan/Limit"             (batas numerik yang sejalan dengan Parameter)
+- Semua baris wajib terkait langsung dengan 'Penyebab Utama'.
 """
             progress.progress(55, "🧠 Menghubungi GPT...")
             ai_text = get_gpt_response(
@@ -553,7 +550,6 @@ WAJIB:
             df = pd.DataFrame.from_records(data)
             df = ensure_metrix_columns(df)
 
-            # Normalisasi nilai sikap
             valid_att = ["Strategis", "Moderat", "Konservatif", "Tidak toleran"]
             df["Sikap Terhadap Risiko"] = df["Sikap Terhadap Risiko"].apply(
                 lambda x: x if x in valid_att else "Moderat"
@@ -565,7 +561,7 @@ WAJIB:
             st.dataframe(report, use_container_width=True, hide_index=True)
 
             if (report["Relasi OK?"] == "❗").any():
-                st.warning("Beberapa baris belum related dengan Parameter Kunci. Anda bisa Auto-Fix berbasis Template AI.")
+                st.warning("Beberapa baris belum related dengan Penyebab Utama. Anda bisa Auto-Fix berbasis Template AI.")
                 if st.button("🛠️ Auto-Fix dengan Template AI", key="btn_autofix"):
                     df = autofix_unrelated_rows(df)
                     report2 = check_relation_to_cause(df)
@@ -579,7 +575,7 @@ WAJIB:
             st.session_state["copy_metrix_strategi_risiko"] = df.copy()
 
             progress.progress(100, "✅ Selesai!")
-            st.success("✅ Metrix Risiko dibuat & diverifikasi (berbasis Template AI).")
+            st.success("✅ Metrix Risiko dibuat & diverifikasi (kolom 'Penyebab Utama' aktif).")
         except Exception as e:
             st.error(f"❌ Gagal membangun Metrix: {e}")
 
