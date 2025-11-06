@@ -1,6 +1,7 @@
 # modules/strategi_risiko.py
 # ======================================================
-# Strategi Risiko — Upload, Ambang Batas, Taksonomi (Checkbox), Saran AI, Metrix, Export
+# Strategi Risiko — Upload, Ambang Batas, Taksonomi (Checkbox),
+# AI Penyebab Utama → Pilih Penyebab → AI Metrix, Editor, Export
 # ======================================================
 
 import streamlit as st
@@ -54,10 +55,9 @@ TAXONOMY = {
 # ======================================================
 
 def extract_json(response_text: str):
-    """Ambil JSON array valid dari teks (jawaban model)"""
+    """Ambil JSON array valid dari teks (jawaban model)."""
     try:
-        json_pattern = re.compile(r"\[.*\]", re.DOTALL)
-        m = json_pattern.search(response_text or "")
+        m = re.search(r"\[.*\]", response_text or "", flags=re.DOTALL)
         if not m:
             return None
         return json.loads(m.group())
@@ -112,7 +112,7 @@ def modul_ambang_batas(total_aset: int):
 # ======================================================
 
 def modul_metrix_strategi_risiko():
-    st.subheader("📝 Metrix Strategi Risiko")
+    st.subheader("📝 Metrix Strategi Risiko (Editor Manual)")
     if "metrix_strategi" not in st.session_state:
         st.session_state["metrix_strategi"] = pd.DataFrame(columns=[
             "Kode Risiko", "Kategori Risiko T2 & T3 KBUMN", "Risk Appetite Statement",
@@ -133,7 +133,6 @@ def modul_metrix_strategi_risiko():
 
     if st.button("🔄 Update Data", key="btn_update_metrix"):
         df_updated = edited.copy()
-        # buang kolom No sebelum simpan
         if "No" in df_updated.columns:
             df_updated = df_updated.drop(columns=["No"])
         df_updated = generate_risk_codes(df_updated)
@@ -201,11 +200,11 @@ def tampilkan_taksonomi_risiko_relevan():
         return TAXONOMY
 
 # ======================================================
-# Saran AI (Metrix)
+# AI Helpers
 # ======================================================
 
-def get_gpt_response(prompt, system_message="", model="gpt-4", temperature=0.5, max_tokens=3000):
-    """Wrapper OpenAI ChatCompletion (sesuaikan kredensial di environment)."""
+def get_gpt_response(prompt, system_message="", model="gpt-4", temperature=0.4, max_tokens=3000):
+    """Wrapper OpenAI ChatCompletion (pastikan OPENAI_API_KEY ada di env)."""
     try:
         resp = openai.ChatCompletion.create(
             model=model,
@@ -220,31 +219,40 @@ def get_gpt_response(prompt, system_message="", model="gpt-4", temperature=0.5, 
     except Exception as e:
         return f"❌ Error saat menghubungi GPT: {e}"
 
-def saran_gpt_metrix_strategi_risiko():
-    st.markdown("### 🤖 Saran AI: Metrix Strategi Risiko")
+# ======================================================
+# (BARU) AI: REKOMENDASI PENYEBAB UTAMA → PILIH PENYEBAB
+# ======================================================
 
-    selected_taxonomies = st.session_state.get("selected_taxonomi", [])
-    if not selected_taxonomies:
-        st.warning("⚠️ Belum ada pilihan taksonomi. Silakan centang item terlebih dahulu.")
+def ai_rekomendasi_penyebab_utama():
+    """
+    Menghasilkan 3 rekomendasi penyebab utama untuk setiap risiko yang dipilih.
+    Simpan di st.session_state["root_cause_options"] sebagai dict:
+      { "<kategori>|<risiko>": ["causal-1","causal-2","causal-3"], ... }
+    """
+    st.subheader("🧠 AI: Rekomendasi Penyebab Utama")
+    selected = st.session_state.get("selected_taxonomi", [])
+    if not selected:
+        st.warning("⚠️ Belum ada taksonomi yang dipilih.")
         return
 
-    if st.button("🔍 Dapatkan Saran AI", key="btn_call_ai"):
+    if "root_cause_options" not in st.session_state:
+        st.session_state["root_cause_options"] = {}
+
+    if st.button("🔍 Dapatkan 3 Penyebab Utama per Risiko", key="btn_get_causes"):
         progress = st.progress(0, text="📡 Menyiapkan permintaan...")
         try:
             progress.progress(20, "📄 Menyusun prompt...")
 
+            # Siapkan payload sederhana
             payload = {
-                "risks_selected": selected_taxonomies,  # [{"kategori": "...", "risiko": "..."}]
-                "expected_columns": [
-                    "Kode Risiko",
-                    "Kategori Risiko T2 & T3 KBUMN",
-                    "Risk Appetite Statement",
-                    "Sikap Terhadap Risiko",
-                    "Parameter",
-                    "Satuan Ukuran",
-                    "Nilai Batasan/Limit",
-                ],
-                "notes": "Set kolom 'Kategori Risiko T2 & T3 KBUMN' = nilai 'kategori' dari input user.",
+                "risks_selected": selected,  # [{"kategori": "...", "risiko": "..."}]
+                "expected_format": [
+                    {
+                        "kategori": "🖥️ Operational Risk",
+                        "risiko": "Cyber Attack Sistem Informasi",
+                        "penyebab_utama": ["..", "..", ".."]
+                    }
+                ]
             }
 
             prompt = f"""
@@ -252,29 +260,173 @@ Berikut daftar risiko yang dipilih user (JSON):
 {json.dumps(payload, indent=2, ensure_ascii=False)}
 
 TUGAS:
-- Keluarkan satu baris untuk SETIAP item risiko di atas.
-- Balas HANYA JSON array valid (tanpa teks lain).
-- Kolom persis:
-  - "Kode Risiko" (boleh kosong)
-  - "Kategori Risiko T2 & T3 KBUMN" (ISI DENGAN NILAI 'kategori' dari input)
-  - "Risk Appetite Statement"
-  - "Sikap Terhadap Risiko" (pilih salah satu: "Strategis", "Moderat", "Konservatif", "Tidak toleran")
-  - "Parameter"
-  - "Satuan Ukuran"
-  - "Nilai Batasan/Limit"
-- Gunakan nilai 'risiko' untuk menginspirasi statement & parameter.
-- Pastikan JSON valid.
+- Untuk SETIAP objek risiko di atas, kembalikan persis format:
+  {{
+    "kategori": "...",
+    "risiko": "...",
+    "penyebab_utama": ["Penyebab-1", "Penyebab-2", "Penyebab-3"]
+  }}
+- Hanya balas dengan JSON array valid (tanpa teks lain).
+- Penyebab harus spesifik, actionable, dan menjelaskan sumber akar (people/process/technology/external).
 """
 
             progress.progress(45, "🧠 Menghubungi GPT...")
             ai_text = get_gpt_response(
                 prompt,
-                system_message="Anda adalah asisten AI untuk analisis risiko perusahaan pelabuhan.",
-                temperature=0.4,
-                max_tokens=4000,
+                system_message="Anda asisten AI untuk analisis risiko perusahaan pelabuhan.",
+                temperature=0.3,
+                max_tokens=3000
             )
 
             progress.progress(65, "📥 Parsing respons AI...")
+            data = extract_json(ai_text)
+            if not data:
+                raise ValueError("Respons AI tidak mengandung JSON valid.")
+
+            # Simpan ke state
+            options = {}
+            for row in data:
+                kategori = row.get("kategori")
+                risiko = row.get("risiko")
+                causes = row.get("penyebab_utama", [])
+                if kategori and risiko and isinstance(causes, list):
+                    key = f"{kategori}|{risiko}"
+                    options[key] = causes[:3]  # ambil maksimal 3
+
+            st.session_state["root_cause_options"] = options
+            progress.progress(100, "✅ Penyebab utama berhasil diambil.")
+            st.success("✅ Rekomendasi 3 penyebab utama per risiko sudah tersedia.")
+        except Exception as e:
+            st.error(f"❌ Gagal mengambil rekomendasi penyebab: {e}")
+
+def ui_pilih_penyebab_utama():
+    """
+    Tampilkan UI pilihan penyebab utama per risiko.
+    Simpan pilihan user di st.session_state["root_cause_selected"]:
+      { "<kategori>|<risiko>": "<selected_cause>" }
+    """
+    st.subheader("🧩 Pilih Penyebab Utama per Risiko")
+    options = st.session_state.get("root_cause_options", {})
+    selected = st.session_state.get("selected_taxonomi", [])
+
+    if not selected:
+        st.info("Belum ada risiko yang dipilih.")
+        return
+
+    if not options:
+        st.info("Belum ada rekomendasi penyebab. Tekan tombol 'Dapatkan 3 Penyebab Utama per Risiko' di atas.")
+        return
+
+    if "root_cause_selected" not in st.session_state:
+        st.session_state["root_cause_selected"] = {}
+
+    for item in selected:
+        kategori, risiko = item["kategori"], item["risiko"]
+        key = f"{kategori}|{risiko}"
+        daftar = options.get(key, [])
+        st.markdown(f"**{kategori} — {risiko}**")
+
+        if daftar:
+            # radio satu pilihan (bisa diubah ke selectbox/multiselect bila perlu)
+            default_idx = 0
+            if key in st.session_state["root_cause_selected"]:
+                try:
+                    default_idx = daftar.index(st.session_state["root_cause_selected"][key])
+                except ValueError:
+                    default_idx = 0
+            choice = st.radio(
+                "Pilih penyebab utama:",
+                daftar,
+                index=default_idx if default_idx < len(daftar) else 0,
+                key=_slug(f"rc_{key}")
+            )
+            st.session_state["root_cause_selected"][key] = choice
+        else:
+            st.warning("AI belum memberikan opsi penyebab untuk item ini.")
+
+        st.write("---")
+
+# ======================================================
+# (DISESUAIKAN) AI: Saran Metrix berdasarkan Penyebab Utama terpilih
+# ======================================================
+
+def saran_gpt_metrix_strategi_risiko():
+    st.markdown("### 🤖 Saran AI: Metrix Strategi Risiko (berdasarkan penyebab utama)")
+
+    selected_taxonomies = st.session_state.get("selected_taxonomi", [])
+    if not selected_taxonomies:
+        st.warning("⚠️ Belum ada pilihan taksonomi.")
+        return
+
+    selected_causes = st.session_state.get("root_cause_selected", {})
+    if not selected_causes:
+        st.warning("⚠️ Belum ada penyebab utama yang dipilih.")
+        return
+
+    # Bangun payload terstruktur untuk GPT
+    rows = []
+    for item in selected_taxonomies:
+        kategori, risiko = item["kategori"], item["risiko"]
+        key = f"{kategori}|{risiko}"
+        cause = selected_causes.get(key)
+        rows.append({
+            "kategori": kategori,
+            "risiko": risiko,
+            "penyebab_utama_terpilih": cause
+        })
+
+    if st.button("🧮 Bangun Metrix Risiko (AI)", key="btn_call_ai_metrix"):
+        progress = st.progress(0, text="📡 Menyiapkan permintaan...")
+        try:
+            progress.progress(25, "📄 Menyusun prompt...")
+
+            payload = {
+                "risks_with_root_cause": rows,
+                "expected_columns": [
+                    "Kode Risiko",
+                    "Kategori Risiko T2 & T3 KBUMN",
+                    "Risk Appetite Statement",
+                    "Sikap Terhadap Risiko",
+                    "Parameter",
+                    "Satuan Ukuran",
+                    "Nilai Batasan/Limit"
+                ],
+                "guidance": [
+                    "Gunakan 'kategori' langsung untuk kolom 'Kategori Risiko T2 & T3 KBUMN'.",
+                    "Turunkan Parameter, Satuan Ukuran, dan Nilai Limit dari 'penyebab_utama_terpilih' agar actionable.",
+                    "Risk Appetite Statement harus jelas & dapat diukur.",
+                    "Sikap Terhadap Risiko salah satu dari: Strategis, Moderat, Konservatif, Tidak toleran."
+                ]
+            }
+
+            prompt = f"""
+Berikut daftar risiko dan penyebab utama terpilih (JSON):
+{json.dumps(payload, indent=2, ensure_ascii=False)}
+
+TUGAS:
+- Hasilkan satu baris untuk SETIAP entri pada 'risks_with_root_cause'.
+- Balas HANYA dalam bentuk JSON array valid, tanpa teks lain.
+- Kolom persis:
+  - "Kode Risiko" (boleh kosong)
+  - "Kategori Risiko T2 & T3 KBUMN" (ISI DENGAN NILAI 'kategori')
+  - "Risk Appetite Statement"
+  - "Sikap Terhadap Risiko" (Strategis|Moderat|Konservatif|Tidak toleran)
+  - "Parameter"
+  - "Satuan Ukuran"
+  - "Nilai Batasan/Limit"
+- Pastikan Parameter, Satuan Ukuran, dan Nilai Limit konsisten dengan penyebab utama terpilih.
+- JSON wajib valid.
+"""
+
+            progress.progress(55, "🧠 Menghubungi GPT...")
+            ai_text = get_gpt_response(
+                prompt,
+                system_message="Anda asisten AI untuk analisis risiko perusahaan pelabuhan. Jawaban harus JSON valid.",
+                temperature=0.35,
+                max_tokens=4000
+            )
+
+            progress.progress(75, "📥 Parsing respons AI...")
             data = extract_json(ai_text)
             if not data:
                 raise ValueError("Respons AI tidak mengandung JSON valid.")
@@ -289,6 +441,7 @@ TUGAS:
             if miss:
                 raise ValueError(f"Kolom hilang: {miss}")
 
+            # Normalisasi nilai sikap
             valid_att = ["Strategis", "Moderat", "Konservatif", "Tidak toleran"]
             df["Sikap Terhadap Risiko"] = df["Sikap Terhadap Risiko"].apply(
                 lambda x: x if x in valid_att else "Moderat"
@@ -302,10 +455,9 @@ TUGAS:
             st.session_state["copy_metrix_strategi_risiko"] = df.copy()
 
             progress.progress(100, "✅ Selesai!")
-            st.success("✅ Saran AI berhasil dimuat ke Metrix.")
-
+            st.success("✅ Metrix Risiko berbasis penyebab utama berhasil dibuat.")
         except Exception as e:
-            st.error(f"❌ Gagal memproses saran AI: {e}")
+            st.error(f"❌ Gagal membangun Metrix: {e}")
 
 # ======================================================
 # Save / Download (Excel)
@@ -320,7 +472,6 @@ def save_and_download_strategi_risiko_combined():
     try:
         os.makedirs(folder_path, exist_ok=True)
     except Exception:
-        # jika OS non-Windows atau tanpa izin, skip simpan ke server
         folder_path = None
 
     nama_file = f"Strategi_Risiko_{kode_perusahaan}_{timestamp}.xlsx"
@@ -333,14 +484,12 @@ def save_and_download_strategi_risiko_combined():
 
     output = io.BytesIO()
     try:
-        # Writer untuk server
         if server_file_path:
             with pd.ExcelWriter(server_file_path, engine="xlsxwriter") as w:
                 df_copy_ambang.to_excel(w, sheet_name="Copy Ambang Batas Risiko", index=False)
                 df_limit.to_excel(w, sheet_name="Copy Limit Risiko", index=False)
                 df_metrix_copy.to_excel(w, sheet_name="Copy Metrix Strategi Risiko", index=False)
 
-        # Writer untuk download
         with pd.ExcelWriter(output, engine="xlsxwriter") as w2:
             df_copy_ambang.to_excel(w2, sheet_name="Copy Ambang Batas Risiko", index=False)
             df_limit.to_excel(w2, sheet_name="Copy Limit Risiko", index=False)
@@ -392,7 +541,6 @@ def main():
             for s in sheet_names:
                 (strategi_sheets if s in expected_strategi else profil_sheets).append(s)
 
-            # Profil perusahaan
             if profil_sheets:
                 profil_data = {}
                 for s in profil_sheets:
@@ -401,7 +549,6 @@ def main():
                 st.session_state["copy2_profil_perusahaan"] = profil_data
                 st.success(f"✅ Profil Perusahaan dimuat ({len(profil_data)} sheet).")
 
-            # Strategi
             if "Copy Ambang Batas Risiko" in strategi_sheets:
                 st.session_state["copy_ambang_batas_risiko"] = xls.parse("Copy Ambang Batas Risiko")
 
@@ -492,15 +639,14 @@ def main():
             if not edited_ambang.empty:
                 df_ambang.loc[:, "Nilai"] = edited_ambang["Nilai"]
                 st.session_state["copy_ambang_batas_risiko"] = df_ambang.drop(columns=["No"]).copy()
-                # Update copy_limit_risiko jika ada
-                row_limit = st.session_state["copy_ambang_batas_risiko"]
+                # refresh limit
                 try:
-                    val = row_limit.loc[row_limit["Ambang Batas"]=="Limit Risiko", "Nilai"].iloc[0]
+                    val = st.session_state["copy_ambang_batas_risiko"].loc[
+                        st.session_state["copy_ambang_batas_risiko"]["Ambang Batas"]=="Limit Risiko", "Nilai"
+                    ].iloc[0]
                     st.session_state["copy_limit_risiko"] = int(str(val).replace(".", "").replace(",", ""))
                 except Exception:
-                    st.session_state["copy_limit_risiko"] = row_limit.loc[
-                        row_limit["Ambang Batas"]=="Limit Risiko", "Nilai"
-                    ].iloc[0] if not row_limit.empty else "-"
+                    st.session_state["copy_limit_risiko"] = "-"
                 st.success("✅ Ambang Batas diperbarui.")
             else:
                 st.warning("⚠️ Tidak ada data untuk disalin.")
@@ -510,7 +656,7 @@ def main():
             if total_aset_val and total_aset_val > 0:
                 hasil, limit_risk = modul_ambang_batas(total_aset_val)
                 if hasil is not None:
-                    # gabungkan dengan edit terakhir (jika ada)
+                    # merge dengan edit terakhir jika ada
                     try:
                         df_edit_state = st.session_state["editor_ambang_batas"]
                         if "Ambang Batas" in df_edit_state.columns and "Nilai" in df_edit_state.columns:
@@ -540,7 +686,6 @@ def main():
         if not edited_ambang.empty:
             df_ambang.loc[:, "Nilai"] = edited_ambang["Nilai"]
             st.session_state["copy_ambang_batas_risiko"] = df_ambang.drop(columns=["No"]).copy()
-            # refresh limit
             try:
                 val = st.session_state["copy_ambang_batas_risiko"].loc[
                     st.session_state["copy_ambang_batas_risiko"]["Ambang Batas"]=="Limit Risiko", "Nilai"
@@ -552,16 +697,22 @@ def main():
         else:
             st.warning("⚠️ Tidak ada data untuk disalin.")
 
-    # === Taksonomi (Checkbox) ===
+    # === 1) Taksonomi (Checkbox) ===
     tampilkan_taksonomi_risiko_relevan()
 
-    # === AI Metrix ===
+    # === 2) AI Rekomendasi Penyebab Utama ===
+    ai_rekomendasi_penyebab_utama()
+
+    # === 3) Pilih Penyebab Utama ===
+    ui_pilih_penyebab_utama()
+
+    # === 4) AI Metrix berbasis Penyebab Utama ===
     saran_gpt_metrix_strategi_risiko()
 
-    # === Editor Metrix manual ===
+    # === 5) Editor Metrix Manual (opsional revisi) ===
     modul_metrix_strategi_risiko()
 
-    # === Export Excel ===
+    # === 6) Export Excel ===
     save_and_download_strategi_risiko_combined()
 
 # Debugging lokal
